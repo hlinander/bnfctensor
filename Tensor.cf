@@ -1,0 +1,56 @@
+--TExpr ::= TFunc ;
+Add. TExpr ::= TExpr "+" TExpr1 ;
+Sub. TExpr ::= TExpr "-" TExpr1 ;
+Mul. TExpr1 ::= TExpr1 "." TExpr2 ;
+Div. TExpr1 ::= TExpr1 "/" TExpr2 ;
+Scalar. TExpr2 ::= Ident ;
+Tensor. TExpr2 ::= Ident ":" [SIdent] ;
+
+ISup. SIdent ::= "^" Ident ;
+ISub. SIdent ::= "_" Ident ;
+(:[]). [SIdent] ::= SIdent;
+(:). [SIdent] ::= SIdent " " [SIdent];
+
+entrypoints Derivation ;
+
+Derivation. Derivation ::= [TStmt] ;
+
+coercions TExpr 2 ;
+
+VoidStmt. TStmt ::= TExpr ;
+AssignStmt. TStmt ::= Ident ":=" TExpr ;
+SymmStmt. TStmt ::= "sym" Ident "{" TSym "}" ; 
+[]. [TStmt] ::= ;
+(:[]). [TStmt] ::= TStmt ";" ;
+(:). [TStmt] ::= TStmt ";" [TStmt] ;
+
+ASym. TSym ::= "anti_symmetric" ;
+Sym. TSym ::= "symmetric" ;
+EqSym. TSym ::= [TEqSym] ;
+
+EqSymExpr. TEqSym ::= SymExpr "=" SymExpr ;
+(:[]). [TEqSym] ::=  TEqSym ";" ;
+(:). [TEqSym] ::= TEqSym ";" [TEqSym] ;
+
+NegSym. SymExpr ::= "-" SymExpr1 ;
+PosSym. SymExpr ::= SymExpr1 ;
+TensorSym. SymExpr1 ::= Ident ":" [SIdent] ;
+
+coercions SymExpr 1 ;
+
+
+-- []
+
+
+[]. [TSym] ::= ;
+(:[]). [TSym] ::= TSym ";" ;
+(:). [TSym] ::= TSym ";" [TSym] ;
+
+--TStmt ::= Ident ":=" TExpr;
+
+--Book ::= [TStmt] ;
+
+--TFunc ::= Ident "(" TExpr ")" ;
+
+comment "//" ;
+comment "/*" "*/" ;
