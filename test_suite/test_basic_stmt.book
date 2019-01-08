@@ -1,1 +1,32 @@
-T: ^a _b . (V + S: ^c); S; M := S: ^a;
+// test basic statements with expressions
+T ^a _b . (V + S ^c);
+S;
+(S-B) _b;
+-Z;
+M := S ^a;
+
+
+// vector matrix multiplication
+(A.v)_i;
+
+// matrix multiplication
+C _i _k;
+(A . B) _i _k;
+A ^i _j . B ^j _k;
+
+// outer products
+A^i _j;
+u^i . v _j;
+(u.v) ^i _j;
+
+// function call
+d(A ^i _j);
+z(A ^i _j, T, U, V);
+
+
+// function declaration
+# my_func documentation
+# it is very good
+transform my_func(T) {
+    A + B;
+}

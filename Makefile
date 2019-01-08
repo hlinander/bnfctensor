@@ -1,16 +1,23 @@
-all:
-	happy -gca ParTensor.y
-	alex -g LexTensor.x
-	ghc --make TestTensor.hs -o TestTensor
+.PHONY: all clean
+
+all: tensor
+
+tensor: Tensor.hs Frontend/LexTensor.hs Frontend/ParTensor.hs
+	ghc --make $< -o tensor
 
 clean:
-	-rm -f *.log *.aux *.hi *.o *.dvi
+	-rm -f Frontend/*.hi Frontend/*.o
 
-distclean: clean
-	-rm -f DocTensor.* LexTensor.* ParTensor.* LayoutTensor.* SkelTensor.* PrintTensor.* TestTensor.* AbsTensor.* TestTensor ErrM.* SharedString.* ComposOp.* Tensor.dtd XMLTensor.* Makefile*
+LEXER = LexTensor.hs
+PARSER = ParTensor.hs
 
-test_books := $(wildcard test_suite/*)
+VPATH = Frontend
 
-test: $(test_books)
-	./TestTensor $<
+Frontend/%.hs: %.y
+	happy -gca $<
 
+Frontend/%.hs: %.x
+	alex -g $<
+
+Frontend/ParTensor.y Frontend/LexTensor.x: Tensor.cf
+	bnfc -p Frontend --ghc $<

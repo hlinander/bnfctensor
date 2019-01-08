@@ -1,3 +1,12 @@
 sym A {
-    A:^a^b = -A:^b^a;
-};
+    A^a^b = -A^b^a;
+}
+
+
+sym B, C {
+    T^a^b = -T^b^a;
+}
+
+symmetric X, Y, Z;
+
+anti_symmetric T;

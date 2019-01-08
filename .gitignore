@@ -1,0 +1,6 @@
+tensor
+*.hi
+*.o
+*.x
+*.y
+*.sw?

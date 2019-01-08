@@ -1,56 +1,90 @@
---TExpr ::= TFunc ;
-Add. TExpr ::= TExpr "+" TExpr1 ;
-Sub. TExpr ::= TExpr "-" TExpr1 ;
-Mul. TExpr1 ::= TExpr1 "." TExpr2 ;
-Div. TExpr1 ::= TExpr1 "/" TExpr2 ;
-Scalar. TExpr2 ::= Ident ;
-Tensor. TExpr2 ::= Ident ":" [SIdent] ;
+entrypoints Book ;
 
-ISup. SIdent ::= "^" Ident ;
-ISub. SIdent ::= "_" Ident ;
-(:[]). [SIdent] ::= SIdent;
-(:). [SIdent] ::= SIdent " " [SIdent];
+Derivation. Book ::= [Stmt] ;
 
-entrypoints Derivation ;
+-----------------------------------------------------------------------
+-- Statements
+-----------------------------------------------------------------------
 
-Derivation. Derivation ::= [TStmt] ;
+token DocString '#' (char - '\n') * ;
 
-coercions TExpr 2 ;
+Void.      Stmt ::= Expr ";" ;
+Assign.    Stmt ::= Label ":=" Expr ";" ;
+Symmetry.  Stmt ::= Sym ;
+TensorDef. Stmt ::= "dim" [Expr4] Integer ";" ;
+RowDoc.    Stmt ::= DocString ;
+FuncDef.   Stmt ::= "transform" Ident "(" [Expr4] ")" "{" [Stmt] "}" ;
 
-VoidStmt. TStmt ::= TExpr ;
-AssignStmt. TStmt ::= Ident ":=" TExpr ;
-SymmStmt. TStmt ::= "sym" Ident "{" TSym "}" ; 
-[]. [TStmt] ::= ;
-(:[]). [TStmt] ::= TStmt ";" ;
-(:). [TStmt] ::= TStmt ";" [TStmt] ;
+(:[]). [Stmt] ::= Stmt ;
+(:).   [Stmt] ::= Stmt [Stmt] ;
 
-ASym. TSym ::= "anti_symmetric" ;
-Sym. TSym ::= "symmetric" ;
-EqSym. TSym ::= [TEqSym] ;
+-----------------------------------------------------------------------
+-- Base symmetry declarations
+-----------------------------------------------------------------------
 
-EqSymExpr. TEqSym ::= SymExpr "=" SymExpr ;
-(:[]). [TEqSym] ::=  TEqSym ";" ;
-(:). [TEqSym] ::= TEqSym ";" [TEqSym] ;
+AntiSymmetric. Sym ::= "anti_symmetric" [Expr4] ";" ;
+Symmetric.     Sym ::= "symmetric" [Expr4] ";" ;
+Equality.      Sym ::= "sym" [Expr4] "{" [EqSym] "}" ;
 
-NegSym. SymExpr ::= "-" SymExpr1 ;
-PosSym. SymExpr ::= SymExpr1 ;
-TensorSym. SymExpr1 ::= Ident ":" [SIdent] ;
+-----------------------------------------------------------------------
+-- Equality symmetry declarations
+-----------------------------------------------------------------------
+
+EqualityExpr. EqSym ::= SymExpr "=" SymExpr ;
+
+(:[]). [EqSym] ::=  EqSym ";" ;
+(:).   [EqSym] ::= EqSym ";" [EqSym] ;
+
+NegSym.    SymExpr  ::= "-" SymExpr1 ;
+TensorSym. SymExpr1 ::= Label [Index] ;
 
 coercions SymExpr 1 ;
 
+-----------------------------------------------------------------------
+-- Tensor expressions
+-----------------------------------------------------------------------
 
--- []
+Func. Expr  ::= Label "(" [Expr] ")" ;
+Add.  Expr1 ::= Expr1 "+" Expr2 ;
+Sub.  Expr1 ::= Expr1 "-" Expr2 ;
+Neg.  Expr1 ::= "-" Expr1 ;           -- shift/reduce conflict with Sub
+Mul.  Expr2 ::= Expr2 "." Expr3 ;
+Div.  Expr2 ::= Expr2 "/" Expr3 ;
 
+(:[]). [Expr] ::= Expr ;
+(:).   [Expr] ::= Expr "," [Expr] ;
 
-[]. [TSym] ::= ;
-(:[]). [TSym] ::= TSym ";" ;
-(:). [TSym] ::= TSym ";" [TSym] ;
+-----------------------------------------------------------------------
+-- Tensor variables
+-----------------------------------------------------------------------
 
---TStmt ::= Ident ":=" TExpr;
+Indexed. Expr3 ::= Expr3 [Index] ;
+Tensor.  Expr4 ::= Label ;
 
---Book ::= [TStmt] ;
+(:[]). [Expr4] ::= Expr4 ;
+(:).   [Expr4] ::= Expr4 "," [Expr4] ;
 
---TFunc ::= Ident "(" TExpr ")" ;
+coercions Expr 4 ;
+
+-----------------------------------------------------------------------
+-- Index variables
+-----------------------------------------------------------------------
+
+Upper. Index ::= "^" Label ;
+Lower. Index ::= "_" Label ;
+
+(:[]). [Index] ::= Index;
+(:).   [Index] ::= Index [Index] ;
+
+-----------------------------------------------------------------------
+-- Labels
+-----------------------------------------------------------------------
+
+token Label letter (letter | digit)* ;
+
+-----------------------------------------------------------------------
+-- Documentation
+-----------------------------------------------------------------------
 
 comment "//" ;
 comment "/*" "*/" ;
