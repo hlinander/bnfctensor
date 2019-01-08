@@ -1,0 +1,9 @@
+Literals for expressions
+
+(1/3) * A
+3 * A
+
+Alias for fully specified representations
+repr Rep3 = 3 of SO(3);
+A in Rep3, Rep3;
+A, B, C in Rep3;

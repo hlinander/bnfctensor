@@ -2,3 +2,40 @@ dim T 3;
 
 
 dim T, U, V 11;
+
+T in 3 in SO(3), 3 in SO(3), Rep3
+
+Rep1 = 10 of SO(3)
+Rep2 = 3 of Spin(3)
+
+Spin(n) {
+    d = 2n + 1
+    invariants {
+        anti_symmetric f
+        f^a^b1^b2...^bn f_a^b1^b2...b^n = f^....
+        
+    }
+}
+
+n in SO(3) {
+    dim n delta;
+    symmetric delta _a _b;
+    delta _a ^a = n;
+
+    dim n epsilon;
+    anti_symmetric epsilon;
+    epsilon _a1 _a2 ... _an epsilon ^b1 ^b2 ... ^bn
+        = delta [_a1 ^[b1 delta _a2 ^b2  delta _an] delta^bn];
+}
+
+n \in SO(3, 1) {
+    invariants {
+        symmetric \delta _a _b
+        \delta _a ^a = n
+        dim n \epsilon
+        anti_symmetric \epsilon 
+        \epsilon _a1 _a2 ... _an \epsilon ^b1 ^b2 ... ^bn 
+          = (-1)^(n) \delta [_a1 ^[b1 \delta _a2 ^b2 ... \delta_an] \delta^bn];
+    }    
+}
+

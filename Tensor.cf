@@ -6,14 +6,13 @@ Derivation. Book ::= [Stmt] ;
 -- Statements
 -----------------------------------------------------------------------
 
-token DocString '#' (char - '\n') * ;
-
-Void.      Stmt ::= Expr ";" ;
-Assign.    Stmt ::= Label ":=" Expr ";" ;
-Symmetry.  Stmt ::= Sym ;
-TensorDef. Stmt ::= "dim" [Expr4] Integer ";" ;
-RowDoc.    Stmt ::= DocString ;
-FuncDef.   Stmt ::= "transform" Ident "(" [Expr4] ")" "{" [Stmt] "}" ;
+Void.        Stmt ::= Expr ";" ;
+Assign.      Stmt ::= Label ":=" Expr ";" ;
+Symmetry.    Stmt ::= Sym ;
+TensorDef.   Stmt ::= "dim" [Expr4] Integer ";" ;
+RowDoc.      Stmt ::= DocString ;
+FuncDef.     Stmt ::= "func" Ident "(" [Expr4] ")" "{" [Stmt] "}" ;
+-- FuncTypeDef. Stmt ::= 
 
 (:[]). [Stmt] ::= Stmt ;
 (:).   [Stmt] ::= Stmt [Stmt] ;
@@ -85,6 +84,8 @@ token Label letter (letter | digit)* ;
 -----------------------------------------------------------------------
 -- Documentation
 -----------------------------------------------------------------------
+
+token DocString '#' (char - '\n') * ;
 
 comment "//" ;
 comment "/*" "*/" ;

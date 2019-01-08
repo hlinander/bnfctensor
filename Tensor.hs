@@ -6,8 +6,8 @@ import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs, getProgName )
 import System.Exit ( exitFailure, exitSuccess )
 
-import Frontend.LexTensor
-import Frontend.ParTensor
+import Frontend.LexTensor ( Token, tokens )
+import Frontend.ParTensor ( pBook )
 import Frontend.PrintTensor
 import Frontend.AbsTensor
 import Frontend.ErrM
@@ -19,7 +19,7 @@ import Control.Monad.State
 
 type ParseFun a = [Token] -> Err a
 
-type Result = Err String
+type Result = Err Book
 
 failure :: Show a => a -> Result
 failure x = Bad $ "Undefined case: " ++ show x
