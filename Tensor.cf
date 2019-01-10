@@ -6,24 +6,44 @@ Derivation. Book ::= [Stmt] ;
 -- Statements
 -----------------------------------------------------------------------
 
-Void.        Stmt ::= Expr ";" ;
-Assign.      Stmt ::= Label ":=" Expr ";" ;
-Symmetry.    Stmt ::= Sym ;
-TensorDef.   Stmt ::= "dim" [Expr4] Integer ";" ;
-RowDoc.      Stmt ::= DocString ;
-FuncDef.     Stmt ::= "func" Ident "(" [Expr4] ")" "{" [Stmt] "}" ;
+StmtVoid.        Stmt ::= Expr ";" ;
+StmtAssign.      Stmt ::= "var" Label "=" Expr ";" ;
+StmtSymmetry.    Stmt ::= Sym ;
+StmtTensorDef.   Stmt ::= "tensor" [LabelList] "{" [TensorDef] "}" ;
+StmtRowDoc.      Stmt ::= DocString ;
+StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr4] ")" "{" [Stmt] "}" ;
 -- FuncTypeDef. Stmt ::= 
 
 (:[]). [Stmt] ::= Stmt ;
 (:).   [Stmt] ::= Stmt [Stmt] ;
 
 -----------------------------------------------------------------------
+-- Tensor type declaration
+-----------------------------------------------------------------------
+
+TensorDef. TensorDef  ::= [IndexDef] ":" TensorDef1 ;
+GroupDef.  TensorDef1 ::= Label "(" [NumList] ")" ;
+
+(:). [TensorDef] ::= TensorDef "*" [TensorDef] ;
+(:[]). [TensorDef] ::= TensorDef ;
+
+IndexGroup. IndexDef ::= Label "(" Integer ")" ;
+(:). [IndexDef] ::= IndexDef "," [IndexDef] ;
+(:[]). [IndexDef] ::= IndexDef ;
+
+-- tensor T, U, V {
+--     a(3), b(2): SO(3,1) *
+--     c(3), d(3): SO(3) *
+--     e(2): SU(3)
+-- }
+
+-----------------------------------------------------------------------
 -- Base symmetry declarations
 -----------------------------------------------------------------------
 
-AntiSymmetric. Sym ::= "anti_symmetric" [Expr4] ";" ;
-Symmetric.     Sym ::= "symmetric" [Expr4] ";" ;
-Equality.      Sym ::= "sym" [Expr4] "{" [EqSym] "}" ;
+AntiSymmetric. Sym ::= "anti_symmetric" [LabelList] ";" ;
+Symmetric.     Sym ::= "symmetric" [LabelList] ";" ;
+Equality.      Sym ::= "sym" [LabelList] "{" [EqSym] "}" ;
 
 -----------------------------------------------------------------------
 -- Equality symmetry declarations
@@ -70,14 +90,29 @@ coercions Expr 4 ;
 -----------------------------------------------------------------------
 
 Upper. Index ::= "^" Label ;
-Lower. Index ::= "_" Label ;
+Lower. Index ::= "." Label ;
 
 (:[]). [Index] ::= Index;
 (:).   [Index] ::= Index [Index] ;
 
 -----------------------------------------------------------------------
+-- Numeric literal
+-----------------------------------------------------------------------
+
+Number. Expr4 ::= Integer ;
+Fraction. Expr4 ::= Integer "/" Integer ;
+
+NumList. NumList ::= Integer ;
+(:).   [NumList] ::= NumList "," [NumList] ;
+(:[]). [NumList] ::= NumList ;
+
+-----------------------------------------------------------------------
 -- Labels
 -----------------------------------------------------------------------
+
+LabelList. LabelList ::= Label ;
+(:[]). [LabelList] ::= LabelList ;
+(:). [LabelList] ::= LabelList "," [LabelList] ;
 
 token Label letter (letter | digit)* ;
 

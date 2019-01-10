@@ -1,0 +1,6 @@
+tensor T, S {
+    a(3): Spin(3,1) *
+    b(3), c(3): SU(3)
+}
+
+var L1 = T^m^n^r + S^p^n^r;

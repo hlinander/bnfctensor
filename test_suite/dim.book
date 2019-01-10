@@ -1,7 +1,24 @@
-dim T 3;
+tensor T, U, V {
+    a(3), b(2): SO(3) *
+    c(3), d(3): SO(3) *
+    e(2): SU(3);
+}
 
+/* tensor T, U, V {
+    a(3), b(2): SO(3) *
+    c(~3), d(3): SO(3) *
+    e(2): SU(3);
+} */
 
-dim T, U, V 11;
+symmetric T, U, V: (a, c);
+anti_symmetric V: (a, d);
+
+sym T, U {
+    A ^a _b = - A ^d _c;
+}
+
+tensor T:
+    3 * 3;
 
 T in 3 in SO(3), 3 in SO(3), Rep3
 
@@ -39,3 +56,6 @@ n \in SO(3, 1) {
     }    
 }
 
+n \in BLA {}
+
+T _a^b

@@ -7,3 +7,11 @@ Alias for fully specified representations
 repr Rep3 = 3 of SO(3);
 A in Rep3, Rep3;
 A, B, C in Rep3;
+
+Unicode BNFC-git
+
+https://arxiv.org/abs/1702.08114
+
+Make freeIndices set
+
+QuickCheck
