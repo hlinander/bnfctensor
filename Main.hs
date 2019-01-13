@@ -18,42 +18,21 @@ import Control.Monad
 import Control.Monad.State
 import Data.List
 
+
+import Core (
+    BookState(..),
+    GroupType(..),
+    IndexType(..),
+    FunctionType(..),
+    TensorType(..)
+ )
+
 type ParseFun a = [Token] -> Err a
 
 type Result = Err Book
 
 failure :: Show a => a -> Result
 failure x = Bad $ "Undefined case: " ++ show x
-
-data IndexType = IndexType {
-    indexDim :: Int,
-    indexGroup :: GroupType,
-    indexName :: String
-} deriving Show
-
-data GroupType = GroupType {
-    groupName :: String,
-    groupDims :: [Int]
-} deriving Show
-
-data TensorType = TensorType {
-    tensorName :: String,
-    tensorIndices :: [IndexType]
-} deriving Show
-
-data ReprType = ReprType {
-    reprDim :: Int
-}
-
-data FunctionType = FunctionType {
-    funcName :: String,
-    funcArity :: Int
-} deriving Show
-
-data BookState = BookState {
-    bookTensors :: [TensorType],
-    bookFuncs :: [FunctionType]
-} deriving Show
 
 analyzeBook :: Book -> State BookState ()
 analyzeBook (Derivation ss) = mapM_ analyzeStmt ss

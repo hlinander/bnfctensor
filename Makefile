@@ -2,7 +2,7 @@
 
 all: tensor
 
-tensor: Tensor.hs Frontend/LexTensor.hs Frontend/ParTensor.hs
+tensor: Main.hs Core.hs Frontend/LexTensor.hs Frontend/ParTensor.hs
 	ghc --make $< -o tensor
 
 clean:
