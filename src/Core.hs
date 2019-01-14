@@ -6,9 +6,11 @@ module Core where
 
 import qualified Frontend.AbsTensor as Abs ( 
     Expr(..), 
+    Index(..),
     Label(..) 
  )
 import Data.Ratio
+import qualified Data.Map as M
 import Math.Combinat.Permutations
 
 data IndexType = IndexType {
@@ -37,40 +39,69 @@ data FunctionType = FunctionType {
 } deriving Show
 
 data BookState = BookState {
+    -- bookTensors :: M.Map TensorName TensorType,
     bookTensors :: [TensorType],
     bookFuncs :: [FunctionType]
 } deriving Show
+
+
 
 -----------------------------------------------------------------------
 -- Transformation
 -----------------------------------------------------------------------
 
-data Calc
-    = Op Operation [Calc]
-    | Number Rational
-    | Tensor String [IndexType] Permutation
-    -- | Tensor String [IndexType] Permutation
+type TensorName = String
 
--- T.a.b.c, T.b.a.c, T^a.b.c
--- T^a.a.b ~ contract(T^a.b.c, {a,b})
+data Calc
+    = Op Operation [Calc] -- [Int] TODO(maybe????): List of free slots
+    | Number Rational
+    | Tensor TensorName [Index] Permutation
+    -- | Component TensorName [ComponentIndex] Permutation
+
+data Index = Index { 
+    indexRepr :: ReprType,
+    indexValence :: ValenceType
+} deriving Show
+
+data ValenceType = Up | Down deriving Show
 
 data Operation
     = (:+)
     | (:*)
     | Transform String
     | Power Int
-    -- | Contract Int Int -- Index position in expression (note behaviour in terms/factors)
-    -- | Contract String String -- Index labels
+    | Contract Int Int -- Index position in expression (note behaviour in terms/factors)
     | Call { func :: (->) Calc Calc }
+
+-- contract(D.d(T.a.b) S.c[contract(M.e.f.c, {e,f})], {d,c})
+-- contract(D.d(T.a.b) S.c, [1, 4])
+-- contract(D.d(T.a.b) contract(M.e.f.c, [1, 2]), [1, 4])
+
+-- D.d(T.a.b) M.e.f.c
+-- free: [2 3]
+-- dummy: [1 7 4 5]
+
+-- T.a.b.c + T.c.b.a
+-- T ()      T (1 3)
+
+-- let expr = S^a T.a.b.c + S^a T.c.b.a
+-- T ()      T (1 3)
+-- contract(S.d T.a.b.c, [1, 2]) + contract(S.d T.a.b.c{(1,3)}, [1, 4])
+
+-- symmetrize(expr, {b, c})
+-- ... + sym(contract(S.d T.a.b.c{(1,3)}, [1, 4]), [2, 3])
+
+
 
 -- Index positions is fragile against tree modifications under the contraction
 -- tensor T { a(2), b(2): SO(3) }
 -- symmatric T
 -- -- Contract index .a and .c in the expression below
--- contract(T.a.b T.c.d, [1, 3])
+-- contract(T.a.b T.c.d, [1, 3]) ~ T.a.b T^a.d
 -- -- Now use the symmetry in T to swap .a and .b, how should the contraction be kept up to date?
 -- -- Compute-wise the natural thing would be to move the contraction to
 -- contract(T.b.a T.c.d, [2, 3])
+-- 
 
 -- Index labels are more flexible and naturally handles the above case but gives rise to
 -- the unatural usage of specific labels and extra logic when traversing.
@@ -81,44 +112,37 @@ calcFromExpr bs x = case x of
   Abs.Add expr1 expr2 -> Op (:+) [recurse expr1, recurse expr2]
   Abs.Sub expr1 expr2 -> Op (:+) [recurse expr1, Op (:*) [Number (-1), recurse expr2]]
   Abs.Neg expr -> Op (:*) [Number (-1), recurse expr]
-  Abs.Mul expr1 expr2 -> Op (:*) [recurse expr1, recurse expr2]
   Abs.Div expr1 (Abs.Number num) -> Op (:*) [recurse expr1, Number (1 % num)]
   Abs.Div expr1 (Abs.Fraction p q) -> Op (:*) [recurse expr1, Number (p % q)]
   Abs.Div expr1 _ -> undefined
   -- Abs.Indexed (Abs.Tensor (Abs.Label label)) indices -> Tensor label $ indexTypes bs x
   -- Abs.Indexed expr indices -> 
-  Abs.Tensor (Abs.Label label) indices -> Tensor label 
+  -- Abs.Tensor (Abs.Label label) indices -> Tensor label 
   Abs.Number p -> Number (fromInteger p)
   Abs.Fraction p q -> Number (p % q)
+  Abs.Mul expr1 expr2 -> Op (:*) [recurse expr1, recurse expr2] 
   where recurse = calcFromExpr bs
 
-data Index = Index { 
-    indexRepr :: ReprType,
-    indexValence :: ValenceType 
-} deriving Show
-
-data ValenceType = Up | Down deriving Show
 
 getIndices :: BookState -> String -> [Abs.Index] -> [Index]
-getIndices bs label indices = map (getIndex bs label) indices
+getIndices bs t indices = map (getIndex bs t) indices
 
-getIndex bs label index = findIndex 
+getIndex bs label index = undefined 
 
-
-indexTypes :: BookState -> Abs.Expr -> [IndexType]
-indexTypes bs x = case x of
-  Abs.Func (Abs.Label label) exprs -> undefined
-  Abs.Add expr1 expr2 -> recurse expr1
-  Abs.Sub expr1 expr2 -> recurse expr1
-  Abs.Neg expr -> recurse expr
-  Abs.Mul expr1 expr2 -> recurse expr1 ++ recurse expr2
-  Abs.Div expr1 (Abs.Number num) -> []
-  Abs.Div expr1 (Abs.Fraction p q) -> []
-  -- Abs.Indexed expr indices -> return $ IndexType 0 (GroupType "" [0]) ""
-  Abs.Tensor (Abs.Label label) indices -> 
-  -- Abs.Number p -> Number (fromInteger p)
-  -- Abs.Fraction p q -> Number (p % q)
-  where recurse = indexTypes bs
+-- indexTypes :: BookState -> Abs.Expr -> [IndexType]
+-- indexTypes bs x = case x of
+--   Abs.Func (Abs.Label label) exprs -> undefined
+--   Abs.Add expr1 expr2 -> recurse expr1
+--   Abs.Sub expr1 expr2 -> recurse expr1
+--   Abs.Neg expr -> recurse expr
+--   Abs.Mul expr1 expr2 -> recurse expr1 ++ recurse expr2
+--   Abs.Div expr1 (Abs.Number num) -> []
+--   Abs.Div expr1 (Abs.Fraction p q) -> []
+--   -- Abs.Indexed expr indices -> return $ IndexType 0 (GroupType "" [0]) ""
+--   Abs.Tensor (Abs.Label label) indices -> undefined 
+--   -- Abs.Number p -> Number (fromInteger p)
+--   -- Abs.Fraction p q -> Number (p % q)
+--   where recurse = indexTypes bs
 
 -- (-1)*T.a
 -- -T.a

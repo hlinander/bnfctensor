@@ -5,6 +5,12 @@ all: tensor
 tensor: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs
 	ghc --make $< -o tensor
 
+docker: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs
+	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest make tensor
+
+docker-ghci:
+	docker run --rm -it -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest
+
 clean:
 	-rm -f Frontend/*.hi Frontend/*.o
 

@@ -4,3 +4,4 @@ tensor
 *.x
 *.y
 *.sw?
+.vscode
