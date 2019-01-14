@@ -11,7 +11,9 @@ import qualified Frontend.AbsTensor as Abs (
  )
 import Data.Ratio
 import qualified Data.Map as M
+import Data.List
 import Math.Combinat.Permutations
+import Tensor
 
 data IndexType = IndexType {
     indexDim :: Int,
@@ -120,9 +122,30 @@ calcFromExpr bs x = case x of
   -- Abs.Tensor (Abs.Label label) indices -> Tensor label 
   Abs.Number p -> Number (fromInteger p)
   Abs.Fraction p q -> Number (p % q)
-  Abs.Mul expr1 expr2 -> Op (:*) [recurse expr1, recurse expr2] 
+  Abs.Mul expr1 expr2 -> contract pairs $ Op (:*) [recurse expr1, recurse expr2]
+    where pairs = contractedPairs expr1 expr2
+
   where recurse = calcFromExpr bs
 
+-- Create nested contractions for a list of contraction pairs of slots
+contract :: [((Abs.Index, Int), (Abs.Index, Int))] -> Calc -> Calc
+contract [] expr = expr
+contract (((_, i1), (_, i2)):rest) expr = Op (Contract i1 i2) [contract rest expr]
+
+contractedPairs expr1 expr2 = pairs
+    where labelEqual ((l1, i1),(l2, i2)) = indexLabel l1 == indexLabel l2
+          -- Get intersecting pairs of labels
+          cartProd = [(i1, i2) | i1 <- (freeIndexSlots expr1), i2 <- (freeIndexSlots expr2)]
+          intersection = filter labelEqual cartProd
+          -- Offset the right hand factor
+          (lh, rh) = (map fst intersection, map snd intersection)
+          orh = offsetIndices lh rh
+          -- Generate contraction pairs
+          pairs = zip lh orh
+
+indexLabel :: Abs.Index -> String
+indexLabel (Abs.Upper (Abs.Label lbl)) = lbl
+indexLabel (Abs.Lower (Abs.Label lbl)) = lbl
 
 getIndices :: BookState -> String -> [Abs.Index] -> [Index]
 getIndices bs t indices = map (getIndex bs t) indices

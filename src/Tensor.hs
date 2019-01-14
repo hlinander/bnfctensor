@@ -37,8 +37,11 @@ freeIndexSlots_ x s = case x of
     Mul expr1 expr2 -> do
         let leftHand = freeIndexSlots_ expr1 (s ++ freeIndexSlots_ expr2 s)
         let rightHand = freeIndexSlots_ expr2 (s ++ freeIndexSlots_ expr1 s)
-        leftHand ++ offset leftHand rightHand
-        where offset lh rh = [ (s, i + length lh) | (s,i) <- rh ]
+        leftHand ++ offsetIndices leftHand rightHand
+        -- where offset lh rh = [ (s, i + length lh) | (s,i) <- rh ]
+
+offsetIndices :: [(Index, Int)] -> [(Index, Int)] -> [(Index, Int)]
+offsetIndices lh rh = [ (s, i + length lh) | (s,i) <- rh ]
 
 valenceFreeEq :: Index -> Index -> Bool
 valenceFreeEq (Upper a) (Lower b) = a == b
