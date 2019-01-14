@@ -67,7 +67,7 @@ Func. Expr  ::= Label "(" [Expr] ")" ;
 Add.  Expr1 ::= Expr1 "+" Expr2 ;
 Sub.  Expr1 ::= Expr1 "-" Expr2 ;
 Neg.  Expr1 ::= "-" Expr1 ;           -- shift/reduce conflict with Sub
-Mul.  Expr2 ::= Expr2 "." Expr3 ;
+Mul.  Expr2 ::= Expr2 Expr3 ;
 Div.  Expr2 ::= Expr2 "/" Expr3 ;
 
 (:[]). [Expr] ::= Expr ;
@@ -77,8 +77,8 @@ Div.  Expr2 ::= Expr2 "/" Expr3 ;
 -- Tensor variables
 -----------------------------------------------------------------------
 
-Indexed. Expr3 ::= Expr3 [Index] ;
-Tensor.  Expr4 ::= Label ;
+-- Indexed. Expr3 ::= Expr3 [Index] ;
+Tensor.  Expr4 ::= Label [Index] ;
 
 (:[]). [Expr4] ::= Expr4 ;
 (:).   [Expr4] ::= Expr4 "," [Expr4] ;
