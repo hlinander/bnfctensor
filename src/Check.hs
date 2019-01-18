@@ -44,20 +44,31 @@ analyzeIndices defs = concatMap analyzeIndex defs
 analyzeExpr :: Expr -> StateT BookState Err Expr
 analyzeExpr expr = case expr of
     -- Indexed expr indices -> undefined
-    Add e1 e2 -> case sort (freeIndices e1) == sort (freeIndices e2) of
-        True -> return expr
-        False -> fail $ "Free indices in (" ++ (printTree e1) ++ ") + (" 
-            ++ printTree e2 ++ ") does not match"
+    Add e1 e2 -> do
+        a1 <- analyzeExpr e1
+        a2 <- analyzeExpr e2
+        checkPlus a1 a2
+    Sub e1 e2 -> do
+        a1 <- analyzeExpr e1
+        a2 <- analyzeExpr e2
+        checkPlus a1 a2
+    -- Mul e1 e2 -> do
+    --     a1 <- analyzeExpr e1
+    --     a2 <- analyzeExpr e2
+
     Tensor label indices -> checkTensorDecl label >> return expr
     _ -> return expr
+    where checkPlus e1 e2 = case sort (freeIndices e1) == sort (freeIndices e2) of
+            True -> return expr
+            False -> fail $ "Free indices in (" ++ (printTree e1) ++ ") + (" 
+                ++ printTree e2 ++ ") does not match"
 
 checkTensorDecl :: Label -> StateT BookState Err ()
 checkTensorDecl (Label s) = do
     tensorType <- findDeclTensor s
     case tensorType of
-        -- [] -> haxxorPrint ("Tensor '" ++ s ++ "' not declared") >> return ()
         ((TensorType name dim) : []) -> return ()
-        _ -> fail "FUCK KNOWS"
+        _ -> fail "Bad tensor decl"
         --(t : ts) -> haxxorPrint ("Tensor '" ++ s ++ "' declared multiple times") >> return ()
     -- let tensorLabels = map tensorName (findDeclTensor s)
     -- case s `elem` tensorLabels of

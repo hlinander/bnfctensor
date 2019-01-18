@@ -2,6 +2,10 @@ module Tensor where
 
 import Frontend.AbsTensor
 
+-- (T.a + S^b.b.a) T^a
+indices :: Expr -> [Index]
+indices 
+
 freeIndices :: Expr -> [Index]
 freeIndices x = freeIndices_ x []
 
