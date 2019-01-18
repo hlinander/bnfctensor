@@ -12,7 +12,7 @@ docker-ghci:
 	docker run --rm -it -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest
 
 clean:
-	-rm -f Frontend/*.hi Frontend/*.o
+	-rm -f tensor *.hi *.o Frontend/*.hi Frontend/*.o
 
 LEXER = LexTensor.hs
 PARSER = ParTensor.hs

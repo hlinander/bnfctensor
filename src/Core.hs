@@ -4,10 +4,10 @@ module Core where
 -- Book analysis
 -----------------------------------------------------------------------
 
-import qualified Frontend.AbsTensor as Abs ( 
-    Expr(..), 
+import qualified Frontend.AbsTensor as Abs (
+    Expr(..),
     Index(..),
-    Label(..) 
+    Label(..)
  )
 import Data.Ratio
 import qualified Data.Map as M
@@ -46,7 +46,7 @@ data BookState = BookState {
     bookFuncs :: [FunctionType]
 } deriving Show
 
-
+emptyBook = BookState [] []
 
 -----------------------------------------------------------------------
 -- Transformation
@@ -110,7 +110,7 @@ data Operation
 
 calcFromExpr :: BookState -> Abs.Expr -> Calc
 calcFromExpr bs x = case x of
-  Abs.Func (Abs.Label label) exprs -> Op (Transform label) (map recurse exprs)
+  -- Abs.Func (Abs.Label label) exprs -> Op (Transform label) (map recurse exprs)
   Abs.Add expr1 expr2 -> Op (:+) [recurse expr1, recurse expr2]
   Abs.Sub expr1 expr2 -> Op (:+) [recurse expr1, Op (:*) [Number (-1), recurse expr2]]
   Abs.Neg expr -> Op (:*) [Number (-1), recurse expr]
