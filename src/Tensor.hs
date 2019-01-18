@@ -1,10 +1,22 @@
 module Tensor where
 
+import Data.List
+
 import Frontend.AbsTensor
 
 -- (T.a + S^b.b.a) T^a
-indices :: Expr -> [Index]
-indices 
+usedIndices :: Expr -> [Index]
+usedIndices x = case x of
+        -- in s, in indices or free
+    Tensor _ indices -> indices
+    Func label exprs -> undefined
+    Add expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
+    Sub expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
+    Neg expr -> usedIndices expr
+    Mul expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2) 
+    Div expr1 expr2 -> usedIndices expr1
+    Number integer -> []
+    Fraction integer1 integer2 -> []
 
 freeIndices :: Expr -> [Index]
 freeIndices x = freeIndices_ x []

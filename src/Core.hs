@@ -14,6 +14,7 @@ import qualified Data.Map as M
 import Data.List
 import Math.Combinat.Permutations
 import Tensor
+import Control.Monad.Reader
 
 data IndexType = IndexType {
     indexDim :: Int,
@@ -48,6 +49,9 @@ data BookState = BookState {
 
 emptyBook = BookState [] []
 
+lookupTensor :: String -> BookState -> TensorType
+lookupTensor l bs = head $ filter (\t -> tensorName t == l) $ bookTensors bs
+
 -----------------------------------------------------------------------
 -- Transformation
 -----------------------------------------------------------------------
@@ -58,6 +62,7 @@ data Calc
     = Op Operation [Calc] -- [Int] TODO(maybe????): List of free slots
     | Number Rational
     | Tensor TensorName [Index] Permutation
+    deriving Show
     -- | Component TensorName [ComponentIndex] Permutation
 
 data Index = Index { 
@@ -73,7 +78,8 @@ data Operation
     | Transform String
     | Power Int
     | Contract Int Int -- Index position in expression (note behaviour in terms/factors)
-    | Call { func :: (->) Calc Calc }
+    -- | Call { func :: (->) Calc Calc }
+    deriving Show
 
 -- contract(D.d(T.a.b) S.c[contract(M.e.f.c, {e,f})], {d,c})
 -- contract(D.d(T.a.b) S.c, [1, 4])
@@ -108,33 +114,63 @@ data Operation
 -- Index labels are more flexible and naturally handles the above case but gives rise to
 -- the unatural usage of specific labels and extra logic when traversing.
 
-calcFromExpr :: BookState -> Abs.Expr -> Calc
-calcFromExpr bs x = case x of
-  -- Abs.Func (Abs.Label label) exprs -> Op (Transform label) (map recurse exprs)
-  Abs.Add expr1 expr2 -> Op (:+) [recurse expr1, recurse expr2]
-  Abs.Sub expr1 expr2 -> Op (:+) [recurse expr1, Op (:*) [Number (-1), recurse expr2]]
-  Abs.Neg expr -> Op (:*) [Number (-1), recurse expr]
-  Abs.Div expr1 (Abs.Number num) -> Op (:*) [recurse expr1, Number (1 % num)]
-  Abs.Div expr1 (Abs.Fraction p q) -> Op (:*) [recurse expr1, Number (p % q)]
-  Abs.Div expr1 _ -> undefined
-  -- Abs.Indexed (Abs.Tensor (Abs.Label label)) indices -> Tensor label $ indexTypes bs x
-  -- Abs.Indexed expr indices -> 
-  -- Abs.Tensor (Abs.Label label) indices -> Tensor label 
-  Abs.Number p -> Number (fromInteger p)
-  Abs.Fraction p q -> Number (p % q)
-  Abs.Mul expr1 expr2 -> contract pairs $ Op (:*) [recurse expr1, recurse expr2]
-    where pairs = contractedPairs expr1 expr2
+infixl 5 |*|
+infixl 4 |+|
 
-  where recurse = calcFromExpr bs
+(|*|) :: Calc -> Calc -> Calc
+c1 |*| c2 = Op (:*) [c1, c2]  
+
+(|+|) :: Calc -> Calc -> Calc
+c1 |+| c2 = Op (:+) [c1, c2]  
+
+calcFromExpr :: Abs.Expr -> Reader BookState Calc
+calcFromExpr x = case x of
+  -- Abs.Func (Abs.Label label) exprs -> Op (Transform label) (map recurse exprs)
+  -- [recurse expr1, recurse expr2]
+  -- [a]
+  Abs.Add expr1 expr2 -> Op (:+) <$> mapM calcFromExpr [expr1, expr2]
+  -- Abs.Sub expr1 expr2 -> Op (:+) <$> [recurse expr1, Op (:*) [Number (-1), recurse expr2]]
+  Abs.Sub expr1 expr2 -> do
+    calc1 <- calcFromExpr expr1
+    calc2 <- calcFromExpr expr2
+    return $ calc1 |+| Number (-1) |*| calc2
+  Abs.Neg expr -> do
+    calc <- calcFromExpr expr
+    return $ Number (-1) |*| calc
+  Abs.Div expr (Abs.Number num) -> do
+    calc <- calcFromExpr expr
+    return $ calc |*| Number (1 % num)
+  Abs.Div expr (Abs.Fraction p q) -> do
+    calc <- calcFromExpr expr
+    return $ calc |*| Number (p % q)
+  Abs.Div expr1 _ -> undefined
+  -- -- Abs.Indexed (Abs.Tensor (Abs.Label label)) indices -> Tensor label $ indexTypes bs x
+  -- -- Abs.Indexed expr indices -> 
+  -- -- T.a.b.c  + ...
+  -- -- T.a^a.c -> Cont  
+  Abs.Tensor (Abs.Label label) indices -> selfContractions x
+  Abs.Number p -> return $ Number (fromInteger p)
+  Abs.Fraction p q -> return $ Number (p % q)
+  Abs.Mul expr1 expr2 -> do
+    calc1 <- calcFromExpr expr1
+    calc2 <- calcFromExpr expr2
+    return (contract pairs $ calc1 |*| calc2)
+        where pairs = contractedPairs expr1 expr2
 
 -- Create nested contractions for a list of contraction pairs of slots
-contract :: [((Abs.Index, Int), (Abs.Index, Int))] -> Calc -> Calc
+contract :: [ContractPair] -> Calc -> Calc
 contract [] expr = expr
 contract (((_, i1), (_, i2)):rest) expr = Op (Contract i1 i2) [contract rest expr]
 
+type IndexSlot = (Abs.Index, Int)
+type ContractPair = (IndexSlot, IndexSlot)
+
+labelEqual :: ContractPair -> Bool
+labelEqual ((l1, i1),(l2, i2)) = indexLabel l1 == indexLabel l2
+
+contractedPairs:: Abs.Expr -> Abs.Expr -> [ContractPair]
 contractedPairs expr1 expr2 = pairs
-    where labelEqual ((l1, i1),(l2, i2)) = indexLabel l1 == indexLabel l2
-          -- Get intersecting pairs of labels
+    where -- Get intersecting pairs of labels
           cartProd = [(i1, i2) | i1 <- (freeIndexSlots expr1), i2 <- (freeIndexSlots expr2)]
           intersection = filter labelEqual cartProd
           -- Offset the right hand factor
@@ -142,6 +178,26 @@ contractedPairs expr1 expr2 = pairs
           orh = offsetIndices lh rh
           -- Generate contraction pairs
           pairs = zip lh orh
+
+tensorLabelPermution :: Abs.Expr -> Permutation
+tensorLabelPermution (Abs.Tensor _ idxs) = inverse $ sortingPermutationAsc (map indexLabel idxs)
+
+-- generates calc contractions from tensor
+selfContractions :: Abs.Expr -> Reader BookState Calc
+selfContractions t@(Abs.Tensor (Abs.Label l) idxs) = do
+        tensorType <- asks (lookupTensor l)
+        let indices = map (uncurry indexTypeToIndex) $ zip idxs (tensorIndices tensorType)
+        return $ contract intersection (Tensor l indices $ tensorLabelPermution t)
+    where indexSlots = zip idxs [0..length idxs]
+          cartProd = [(i1, i2) | i1 <- indexSlots, i2 <- indexSlots, not $ i1 == i2]
+          intersection = filter labelEqual cartProd
+
+indexTypeToIndex:: Abs.Index -> IndexType -> Index
+indexTypeToIndex av IndexType{indexDim=d} = Index r v
+            where r = ReprType d
+                  v = calcVal av
+                  calcVal (Abs.Upper _) = Up
+                  calcVal (Abs.Lower _) = Down
 
 indexLabel :: Abs.Index -> String
 indexLabel (Abs.Upper (Abs.Label lbl)) = lbl
@@ -151,21 +207,6 @@ getIndices :: BookState -> String -> [Abs.Index] -> [Index]
 getIndices bs t indices = map (getIndex bs t) indices
 
 getIndex bs label index = undefined 
-
--- indexTypes :: BookState -> Abs.Expr -> [IndexType]
--- indexTypes bs x = case x of
---   Abs.Func (Abs.Label label) exprs -> undefined
---   Abs.Add expr1 expr2 -> recurse expr1
---   Abs.Sub expr1 expr2 -> recurse expr1
---   Abs.Neg expr -> recurse expr
---   Abs.Mul expr1 expr2 -> recurse expr1 ++ recurse expr2
---   Abs.Div expr1 (Abs.Number num) -> []
---   Abs.Div expr1 (Abs.Fraction p q) -> []
---   -- Abs.Indexed expr indices -> return $ IndexType 0 (GroupType "" [0]) ""
---   Abs.Tensor (Abs.Label label) indices -> undefined 
---   -- Abs.Number p -> Number (fromInteger p)
---   -- Abs.Fraction p q -> Number (p % q)
---   where recurse = indexTypes bs
 
 -- (-1)*T.a
 -- -T.a
@@ -178,7 +219,6 @@ data Transformation
 -- a(b+c) -> ab ac
 -- distribute = Distr (:*) (:+)
 -- collectTerms = Reduce (:+)
--- d(ab) = (da)b + a(db)
 -- leibnitz = Distr (:+) (:*)
 -- Rewrite (\c -> )
 -- matchDist (Times )
