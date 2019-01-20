@@ -1,0 +1,5 @@
+tensor T {
+    a(3), b(3): G(1)
+}
+
+(T.a.b + T.b.a) T^a^c + T^c.b;
