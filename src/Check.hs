@@ -47,7 +47,9 @@ analyzeIndices defs = concatMap analyzeIndex defs
 analyzeExpr :: Expr -> ReaderT [Index] (StateT BookState Err) Expr
 analyzeExpr expr = do
     currentIndices <- ask
-    let overlap = (intersect currentIndices (usedIndices expr))
+    let indices = usedIndices expr
+    let overlap = (intersect currentIndices indices)
+    when (not $ nub indices == indices) $ fail $ "Index label collision in [" ++ printTree expr ++ "]\n"
     do
         let exprMsg  = "Index label collisions in [" ++ printTree expr ++ "]\n"
         let indexMsg = "for indices " ++ printTree overlap ++ "\n"

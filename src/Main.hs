@@ -54,7 +54,10 @@ run s = case parse s of
                     (Ok (book, bookState)) -> do
                       let (Derivation stmts) = book
                       let voids = map (\s -> niceexpr s >>= return . (\s -> runReader (calcFromExpr s) bookState)) stmts
-                      let renderedVoids = map (liftM (renderCalc console id)) voids :: [Maybe String]
+                      --let renderedVoids = map (liftM (renderCalc console id)) voids :: [Maybe String]
+                      --let indexLabels = map (\x -> "a" ++ show x) [0..]
+                      let renderState = ([], 0)
+                      let renderedVoids = map (liftM (\x->runReader (renderCalc console id x) renderState)) voids :: [Maybe String]
                       mapM_ putSuccess (catMaybes renderedVoids)
                       exitSuccess
   where niceexpr (StmtVoid s) = Just s

@@ -14,7 +14,11 @@ import qualified Data.Map as M
 import Data.List
 import Math.Combinat.Permutations
 import Tensor
+import Util
 import Control.Monad.Reader
+
+import Debug.Trace
+import Frontend.PrintTensor
 
 data IndexType = IndexType {
     indexDim :: Int,
@@ -169,28 +173,60 @@ labelEqual :: ContractPair -> Bool
 labelEqual ((l1, i1),(l2, i2)) = indexLabel l1 == indexLabel l2
 
 contractedPairs:: Abs.Expr -> Abs.Expr -> [ContractPair]
-contractedPairs expr1 expr2 = pairs
+contractedPairs expr1 expr2 = nestedPairs
     where -- Get intersecting pairs of labels
-          cartProd = [(i1, i2) | i1 <- (freeIndexSlots expr1), i2 <- (freeIndexSlots expr2)]
-          intersection = filter labelEqual cartProd
+          free1 = freeIndexSlots (trace (printTree expr1) expr1)
+          free2 = freeIndexSlots (trace (printTree expr2) expr2)
+          cartProd = [(i1, i2) | i1 <- free1, i2 <- free2]
+          intersection' = filter labelEqual cartProd
+          intersection = trace ("intersection: " ++ show intersection') intersection'
           -- Offset the right hand factor
-          (lh, rh) = (map fst intersection, map snd intersection)
-          orh = offsetIndices lh rh
+          (lh, rh) = traceShowId (map fst intersection, map snd intersection)
+          orh = traceShowId $ offsetIndices free1 rh
           -- Generate contraction pairs
-          pairs = zip lh orh
+          pairs = zip lh orh :: [(IndexSlot, IndexSlot)]
+          -- Nest contractions
+          nestedPairs = getNestedPairs pairs (length free1 + length free2)
+          -- [2,3][0,1]{0}{1}{2}{3}
+          -- [2,3]{2}{3}
+getNestedPairs :: [ContractPair] -> Int -> [ContractPair]
+getNestedPairs pairs n = newPairs
+    where slots = [0..n]
+          (_, newPairs) = foldr reduceNestedPair (slots, []) pairs
+
+reduceNestedPair :: ContractPair -> ([Int], [ContractPair]) -> ([Int], [ContractPair])
+reduceNestedPair ((index1, i1), (index2, i2)) (oldPos, newContractions) 
+    | i1 < i2 = (newPos, ((index1, pos1), (index2, pos2)):newContractions)
+    where (Just pos1) = elemIndex i1 oldPos
+          (Just pos2) = elemIndex i2 oldPos
+          (spos1, spos2) = case pos2 > pos1 of
+            True -> (pos1, pos2)
+            False -> (pos2, pos1)
+          (oldPos', _) = popAt spos2 oldPos
+          (newPos, _) = popAt spos1 oldPos'
 
 tensorLabelPermution :: Abs.Expr -> Permutation
 tensorLabelPermution (Abs.Tensor _ idxs) = inverse $ sortingPermutationAsc (map indexLabel idxs)
 
--- generates calc contractions from tensor
 selfContractions :: Abs.Expr -> Reader BookState Calc
 selfContractions t@(Abs.Tensor (Abs.Label l) idxs) = do
         tensorType <- asks (lookupTensor l)
         let indices = map (uncurry indexTypeToIndex) $ zip idxs (tensorIndices tensorType)
-        return $ contract intersection (Tensor l indices $ tensorLabelPermution t)
-    where indexSlots = zip idxs [0..length idxs]
-          cartProd = [(i1, i2) | i1 <- indexSlots, i2 <- indexSlots, not $ i1 == i2]
-          intersection = filter labelEqual cartProd
+        return $ contract (contractedIndexPairs idxs) (Tensor l indices $ tensorLabelPermution t)
+
+contractedIndexPairs :: [Abs.Index] -> [ContractPair]
+contractedIndexPairs idxs = filter labelEqual distributedPairs
+    where indexSlotPositions = zip idxs [0..length idxs]
+          distributedPairs = [
+                (i1, i2) | 
+                i1@(x,y) <- indexSlotPositions, 
+                i2@(z,w) <- indexSlotPositions, 
+                not (i1 == i2) && y < w
+           ]
+
+-- [^a.a.b] -> [(^a, .a)]
+-- [^a.a^b.b.c] -> [(^a, .a), (^b, .b)]
+
 
 indexTypeToIndex:: Abs.Index -> IndexType -> Index
 indexTypeToIndex av IndexType{indexDim=d} = Index r v

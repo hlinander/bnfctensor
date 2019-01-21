@@ -7,7 +7,6 @@ import Frontend.AbsTensor
 -- (T.a + S^b.b.a) T^a
 usedIndices :: Expr -> [Index]
 usedIndices x = case x of
-        -- in s, in indices or free
     Tensor _ indices -> indices
     Func label exprs -> undefined
     Add expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)

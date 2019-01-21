@@ -1,8 +1,10 @@
 import Test.QuickCheck
+import Test.QuickCheck.Arbitrary.Generic
 import Control.Monad
 import Core
 import Math.Combinat.Permutations
 import Data.Char
+import qualified Frontend.AbsTensor as Abs
 
 -- TODO generate nested calcs with sized
 instance Arbitrary Calc where
@@ -81,3 +83,27 @@ arbitraryTensor = do
 arbitraryIdentifier :: Gen String
 arbitraryIdentifier = vectorOf 2 (elements ['a'..'z']) >>= \(x:xs) -> return $ toUpper x : xs
 --arbitraryIdentifier = listOf1 (elements ['a'..'z']) >>= \xs -> sized (\n -> return $ take n xs)
+
+
+sort :: Ord a => [a] -> [a]
+sort [] = []
+sort (pivot:rest) = sort (filter ((>) pivot) rest) ++ [pivot] ++ sort (filter ((<=) pivot) rest)
+
+prop_sortPairwiseAsc list = isSorted sorted
+    where sorted = sort list
+          isSorted ([]) = True
+          isSorted (x:[]) = True
+          isSorted (x:y:xs) = (x <= y) && isSorted (y:xs)
+          types = list :: [Int]
+
+prop_sortInvariantLength list = length (sort list) == length list
+    where types = list :: [Int]
+
+instance Arbitrary Abs.Expr where
+    arbitrary = genericArbitrary
+
+instance Arbitrary Abs.Label where
+    arbitrary = genericArbitrary
+
+instance Arbitrary Abs.Index where
+    arbitrary = genericArbitrary
