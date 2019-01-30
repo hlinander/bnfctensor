@@ -1,7 +1,7 @@
 .PHONY: build-docker all ghci clean
 
 all:
-	(cd src && make docker)
+	docker run --rm -v $(PWD)/src:/bnfctensor -w /bnfctensor bnfctensor:latest make
 
 clean:
 	(cd src && make clean)
@@ -11,5 +11,3 @@ build-docker:
 
 ghci:
 	(cd src && make docker-ghci)
-
-	

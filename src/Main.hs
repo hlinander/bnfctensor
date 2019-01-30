@@ -10,7 +10,7 @@ import Frontend.ParTensor ( pBook )
 import Frontend.PrintTensor
 import Frontend.AbsTensor
 import Frontend.ErrM
-import Check ( analyzeBook )
+import Check ( analyzeBook, analyzeBookWithState )
 
 import Data.Typeable
 import Data.Maybe
@@ -22,7 +22,8 @@ import RenderCalc
 import Core (
     BookState(..),
     Calc,
-    calcFromExpr
+    calcFromExpr,
+    emptyBook
  )
 
 putColor :: Color -> String -> IO ()
@@ -40,6 +41,60 @@ putSuccess msg = putColor Green msg
 runFile :: FilePath -> IO ()
 runFile f = putStrLn f >> readFile f >>= run
 
+type ReplState = (BookState, [String])
+
+evalExpr :: BookState -> Expr -> IO BookState
+evalExpr bs expr = do
+    let calc = runReader (calcFromExpr expr) bs
+    putStrLn $ runReader (renderCalc console id calc) ([], 0)
+    return $ appendCalc bs calc
+
+evalStatement :: BookState -> Stmt -> IO BookState
+evalStatement bs stmt  = case stmt of
+    StmtAssign (Label var) expr -> putStr (var ++ " := ") >> evalExpr bs expr
+    StmtVoid expr -> evalExpr bs expr
+    StmtFuncDef name exprs stmts -> undefined
+    StmtTensorDef ts ds -> (putSuccess $ concat $ map show ts) >> return bs
+
+evalCommand :: String -> IO ()
+evalCommand ":show tensors" = undefined
+evalCommand ":show variables" = undefined
+evalCommand ":show functions" = undefined
+evalCommand ":show groups <tensor>" = undefined
+evalCommand ":show all groups" = undefined
+evalCommand ":show all groups <name>" = undefined
+
+repl :: IO ()
+repl = replB emptyBook >> return ()
+
+replB :: BookState -> IO BookState
+-- replB bs = replB =<< repl' bs =<< getContents
+replB bs = getLine >>= repl' bs >>= replB
+-- >>=
+
+  -- do
+  -- lol <- getContents
+  -- lol' <- repl' bs lol
+  -- replB lol'
+
+repl' :: BookState -> String -> IO BookState
+repl' bs input = case parse input of
+    Ok ast -> case analyzeBookWithState bs ast of
+      (Bad typeErr) -> putErr typeErr >> return bs
+      (Ok (book, bs')) -> do
+        let (Derivation sts) = book
+        handleStmts bs' sts
+    Bad parseErr -> putErr parseErr >> return bs
+
+handleStmts :: BookState -> [Stmt] -> IO BookState
+handleStmts bs [] = return bs
+handleStmts bs (st:sts) = evalStatement bs st >>= flip handleStmts sts
+
+-- handleStmt :: 
+
+appendCalc :: BookState -> Calc -> BookState
+appendCalc bs c = bs { bookCalcs = c : bookCalcs bs }
+
 run :: String -> IO ()
 run s = case parse s of
     Bad s    -> do putStrLn "\nParse              Failed...\n"
@@ -47,7 +102,7 @@ run s = case parse s of
                    exitFailure
     Ok  tree -> do putStrLn "\nParse Successful!"
                    showTree tree
-                   case runStateT (analyzeBook tree) (BookState [] []) of
+                   case analyzeBook tree of
                     (Bad error) -> do
                       putErr error
                       exitFailure

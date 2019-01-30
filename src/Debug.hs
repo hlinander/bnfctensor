@@ -7,6 +7,7 @@ import Core
 import Control.Monad.Reader
 -- import GHC.Real (:%)
 
+
 getExpr :: Err Book -> Expr
 getExpr (Ok (Derivation [StmtVoid expr])) = expr
 getExpr _ = undefined
@@ -16,6 +17,8 @@ debugParse = getExpr . parse
 
 debugCalc :: String -> Calc
 debugCalc string = runReader (calcFromExpr (debugParse string)) (BookState [] [])
+
+-- debugCalcReal :: Calc -> String
 
 --   mathml (EOp Plus terms) indent = open ++ mlterms ++ close
 --     where open = indent "<mrow>\n" ++ (indent.indent) "<mo>(</mo>\n"

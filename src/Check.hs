@@ -14,14 +14,21 @@ import Core (
     GroupType(..),
     IndexType(..),
     FunctionType(..),
-    TensorType(..)
+    TensorType(..),
+    emptyBook
  )
 
 import Tensor ( freeIndices,
                 usedIndices )
 
-analyzeBook :: Book -> StateT BookState Err Book
-analyzeBook (Derivation ss) = mapM analyzeStmt ss >>= return . Derivation
+analyzeBook :: Book -> Err (Book, BookState)
+analyzeBook book = runStateT (analyzeBook' book) emptyBook
+
+analyzeBookWithState :: BookState -> Book -> Err (Book, BookState)
+analyzeBookWithState = flip (runStateT . analyzeBook')
+
+analyzeBook' :: Book -> StateT BookState Err Book
+analyzeBook' (Derivation ss) = mapM analyzeStmt ss >>= return . Derivation
 
 analyzeStmt :: Stmt -> StateT BookState Err Stmt
 analyzeStmt stmt = case stmt of
@@ -65,15 +72,28 @@ analyzeExpr expr = do
             a2 <- analyzeExpr e2
             checkPlus a1 a2
         Mul e1 e2 -> do
-            local (union $ usedIndices e2) $ analyzeExpr e1
-            local (union $ usedIndices e1) $ analyzeExpr e2
+            _ <- local (union $ usedIndices e2) $ analyzeExpr e1
+            _ <- local (union $ usedIndices e1) $ analyzeExpr e2
             return expr
         Tensor label indices -> checkTensorDecl label indices >> return expr
         _ -> return expr
-        where checkPlus e1 e2 = case sort (freeIndices e1) == sort (freeIndices e2) of
-                True -> return expr
-                False -> fail $ "Free indices in (" ++ (printTree e1) ++ ") + (" 
-                    ++ printTree e2 ++ ") does not match"
+        where checkPlus e1 e2 = let free1 = freeIndices e1
+                                    free2 = freeIndices e2
+                                in case sort free1 == sort free2 of
+                                    True -> return expr
+                                    False -> fail $ "Free indices in "
+                                        ++ "(" ++ (printTree e1) ++ ")"
+                                        ++ " + "
+                                        ++ "(" ++ (printTree e2) ++ ")"
+                                        ++ " does not match, i.e. "
+                                        ++ "{" ++ printNonEmptyIndices (freeIndices e1) ++ "}"
+                                        ++ " != "
+                                        ++ "{" ++ printNonEmptyIndices (freeIndices e2) ++ "}"
+
+printNonEmptyIndices :: [Index] -> String
+printNonEmptyIndices [] = ""
+printNonEmptyIndices expr = printTree expr
+
 
 checkTensorDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
 checkTensorDecl (Label s) indices = do

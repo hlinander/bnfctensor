@@ -7,3 +7,4 @@ RUN git clone https://github.com/haskell/haskell-ide-engine --recurse-submodules
 WORKDIR /hie
 RUN make hie-8.6.3
 RUN make build-doc-8.6.3
+RUN apt install bnfc alex happy

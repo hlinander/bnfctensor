@@ -1,4 +1,4 @@
-.PHONY: all clean
+.PHONY: all clean docker-ghci docker
 
 all: tensor
 

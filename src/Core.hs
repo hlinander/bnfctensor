@@ -48,10 +48,13 @@ data FunctionType = FunctionType {
 data BookState = BookState {
     -- bookTensors :: M.Map TensorName TensorType,
     bookTensors :: [TensorType],
-    bookFuncs :: [FunctionType]
+    bookFuncs :: [FunctionType],
+    bookCalcs :: [Calc]
+    -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
-emptyBook = BookState [] []
+emptyBook :: BookState
+emptyBook = BookState [] [] []
 
 lookupTensor :: String -> BookState -> TensorType
 lookupTensor l bs = head $ filter (\t -> tensorName t == l) $ bookTensors bs
@@ -63,47 +66,22 @@ lookupTensor l bs = head $ filter (\t -> tensorName t == l) $ bookTensors bs
 type TensorName = String
 
 data Calc
-    = Op Operation [Calc] -- [Int] TODO(maybe????): List of free slots
+    = Sum [Calc]
+    | Prod [Calc]
+    | Transform String [Calc]
+    | Power Int Calc
+    | Permute Permutation Calc
+    | Contract Int Int Calc
     | Number Rational
-    | Tensor TensorName [Index] Permutation
+    | Tensor TensorName [Index]
     deriving Show
-    -- | Component TensorName [ComponentIndex] Permutation
 
-data Index = Index { 
+data Index = Index {
     indexRepr :: ReprType,
     indexValence :: ValenceType
 } deriving Show
 
 data ValenceType = Up | Down deriving Show
-
-data Operation
-    = (:+)
-    | (:*)
-    | Transform String
-    | Power Int
-    | Contract Int Int -- Index position in expression (note behaviour in terms/factors)
-    -- | Call { func :: (->) Calc Calc }
-    deriving Show
-
--- contract(D.d(T.a.b) S.c[contract(M.e.f.c, {e,f})], {d,c})
--- contract(D.d(T.a.b) S.c, [1, 4])
--- contract(D.d(T.a.b) contract(M.e.f.c, [1, 2]), [1, 4])
-
--- D.d(T.a.b) M.e.f.c
--- free: [2 3]
--- dummy: [1 7 4 5]
-
--- T.a.b.c + T.c.b.a
--- T ()      T (1 3)
-
--- let expr = S^a T.a.b.c + S^a T.c.b.a
--- T ()      T (1 3)
--- contract(S.d T.a.b.c, [1, 2]) + contract(S.d T.a.b.c{(1,3)}, [1, 4])
-
--- symmetrize(expr, {b, c})
--- ... + sym(contract(S.d T.a.b.c{(1,3)}, [1, 4]), [2, 3])
-
-
 
 -- Index positions is fragile against tree modifications under the contraction
 -- tensor T { a(2), b(2): SO(3) }
@@ -118,22 +96,23 @@ data Operation
 -- Index labels are more flexible and naturally handles the above case but gives rise to
 -- the unatural usage of specific labels and extra logic when traversing.
 
+-- (T^a.a.c.b + S.b.c) U^b
+-- ({0,1}T[4])
+-- permutations depend on the order further down in the tree so they want to be constructed
+-- from the bottom up.
+
 infixl 5 |*|
 infixl 4 |+|
 
 (|*|) :: Calc -> Calc -> Calc
-c1 |*| c2 = Op (:*) [c1, c2]  
+c1 |*| c2 = Prod [c1, c2]
 
 (|+|) :: Calc -> Calc -> Calc
-c1 |+| c2 = Op (:+) [c1, c2]  
+c1 |+| c2 = Sum [c1, c2]
 
 calcFromExpr :: Abs.Expr -> Reader BookState Calc
 calcFromExpr x = case x of
-  -- Abs.Func (Abs.Label label) exprs -> Op (Transform label) (map recurse exprs)
-  -- [recurse expr1, recurse expr2]
-  -- [a]
-  Abs.Add expr1 expr2 -> Op (:+) <$> mapM calcFromExpr [expr1, expr2]
-  -- Abs.Sub expr1 expr2 -> Op (:+) <$> [recurse expr1, Op (:*) [Number (-1), recurse expr2]]
+  Abs.Add expr1 expr2 -> Sum <$> mapM calcFromExpr [expr1, expr2]
   Abs.Sub expr1 expr2 -> do
     calc1 <- calcFromExpr expr1
     calc2 <- calcFromExpr expr2
@@ -147,12 +126,8 @@ calcFromExpr x = case x of
   Abs.Div expr (Abs.Fraction p q) -> do
     calc <- calcFromExpr expr
     return $ calc |*| Number (p % q)
-  Abs.Div expr1 _ -> undefined
-  -- -- Abs.Indexed (Abs.Tensor (Abs.Label label)) indices -> Tensor label $ indexTypes bs x
-  -- -- Abs.Indexed expr indices -> 
-  -- -- T.a.b.c  + ...
-  -- -- T.a^a.c -> Cont  
-  Abs.Tensor (Abs.Label label) indices -> selfContractions x
+  Abs.Div _ _ -> undefined
+  Abs.Tensor (Abs.Label _) _ -> selfContractions x
   Abs.Number p -> return $ Number (fromInteger p)
   Abs.Fraction p q -> return $ Number (p % q)
   Abs.Mul expr1 expr2 -> do
@@ -160,29 +135,30 @@ calcFromExpr x = case x of
     calc2 <- calcFromExpr expr2
     return (contract pairs $ calc1 |*| calc2)
         where pairs = contractedPairs expr1 expr2
+              -- free1 = freeIndexSlots expr1
+  _ -> undefined
 
 -- Create nested contractions for a list of contraction pairs of slots
 contract :: [ContractPair] -> Calc -> Calc
 contract [] expr = expr
-contract (((_, i1), (_, i2)):rest) expr = Op (Contract i1 i2) [contract rest expr]
+contract (((_, i1), (_, i2)):rest) expr = Contract i1 i2 $ contract rest expr
 
 type IndexSlot = (Abs.Index, Int)
 type ContractPair = (IndexSlot, IndexSlot)
 
 labelEqual :: ContractPair -> Bool
-labelEqual ((l1, i1),(l2, i2)) = indexLabel l1 == indexLabel l2
+labelEqual ((l1, _),(l2, _)) = indexLabel l1 == indexLabel l2
 
 contractedPairs:: Abs.Expr -> Abs.Expr -> [ContractPair]
 contractedPairs expr1 expr2 = nestedPairs
     where -- Get intersecting pairs of labels
-          free1 = freeIndexSlots (trace (printTree expr1) expr1)
-          free2 = freeIndexSlots (trace (printTree expr2) expr2)
+          free1 = freeIndexSlots expr1
+          free2 = freeIndexSlots expr2
           cartProd = [(i1, i2) | i1 <- free1, i2 <- free2]
-          intersection' = filter labelEqual cartProd
-          intersection = trace ("intersection: " ++ show intersection') intersection'
+          intersection = filter labelEqual cartProd
           -- Offset the right hand factor
-          (lh, rh) = traceShowId (map fst intersection, map snd intersection)
-          orh = traceShowId $ offsetIndices free1 rh
+          (lh, rh) = (map fst intersection, map snd intersection)
+          orh = offsetIndices free1 rh
           -- Generate contraction pairs
           pairs = zip lh orh :: [(IndexSlot, IndexSlot)]
           -- Nest contractions
@@ -195,38 +171,41 @@ getNestedPairs pairs n = newPairs
           (_, newPairs) = foldr reduceNestedPair (slots, []) pairs
 
 reduceNestedPair :: ContractPair -> ([Int], [ContractPair]) -> ([Int], [ContractPair])
-reduceNestedPair ((index1, i1), (index2, i2)) (oldPos, newContractions) 
+reduceNestedPair ((index1, i1), (index2, i2)) (oldPos, newContractions)
     | i1 < i2 = (newPos, ((index1, pos1), (index2, pos2)):newContractions)
-    where (Just pos1) = elemIndex i1 oldPos
-          (Just pos2) = elemIndex i2 oldPos
-          (spos1, spos2) = case pos2 > pos1 of
-            True -> (pos1, pos2)
-            False -> (pos2, pos1)
-          (oldPos', _) = popAt spos2 oldPos
-          (newPos, _) = popAt spos1 oldPos'
+     where pos1 = unsafeMaybe $ elemIndex i1 oldPos
+           pos2 = unsafeMaybe $ elemIndex i2 oldPos
+           (spos1, spos2) = case pos2 > pos1 of
+             True -> (pos1, pos2)
+             False -> (pos2, pos1)
+           (oldPos', _) = popAt spos2 oldPos
+           (newPos, _) = popAt spos1 oldPos'
+
+unsafeMaybe :: Maybe a -> a
+unsafeMaybe (Just x) = x
+unsafeMaybe _ = undefined
 
 tensorLabelPermution :: Abs.Expr -> Permutation
 tensorLabelPermution (Abs.Tensor _ idxs) = inverse $ sortingPermutationAsc (map indexLabel idxs)
+tensorLabelPermution _ = undefined
 
 selfContractions :: Abs.Expr -> Reader BookState Calc
-selfContractions t@(Abs.Tensor (Abs.Label l) idxs) = do
+selfContractions (Abs.Tensor (Abs.Label l) idxs) = do
         tensorType <- asks (lookupTensor l)
-        let indices = map (uncurry indexTypeToIndex) $ zip idxs (tensorIndices tensorType)
-        return $ contract (contractedIndexPairs idxs) (Tensor l indices $ tensorLabelPermution t)
+        --let indices = map (uncurry indexTypeToIndex) $ zip idxs (tensorIndices tensorType)
+        let indices = zipWith indexTypeToIndex idxs (tensorIndices tensorType)
+        return $ contract (contractedIndexPairs idxs) (Tensor l indices)
+selfContractions _ = undefined
 
 contractedIndexPairs :: [Abs.Index] -> [ContractPair]
 contractedIndexPairs idxs = filter labelEqual distributedPairs
     where indexSlotPositions = zip idxs [0..length idxs]
           distributedPairs = [
-                (i1, i2) | 
-                i1@(x,y) <- indexSlotPositions, 
-                i2@(z,w) <- indexSlotPositions, 
-                not (i1 == i2) && y < w
+                (i1, i2) |
+                i1@(_,x) <- indexSlotPositions,
+                i2@(_,y) <- indexSlotPositions,
+                i1 /= i2 && x < y
            ]
-
--- [^a.a.b] -> [(^a, .a)]
--- [^a.a^b.b.c] -> [(^a, .a), (^b, .b)]
-
 
 indexTypeToIndex:: Abs.Index -> IndexType -> Index
 indexTypeToIndex av IndexType{indexDim=d} = Index r v
@@ -238,16 +217,6 @@ indexTypeToIndex av IndexType{indexDim=d} = Index r v
 indexLabel :: Abs.Index -> String
 indexLabel (Abs.Upper (Abs.Label lbl)) = lbl
 indexLabel (Abs.Lower (Abs.Label lbl)) = lbl
-
-getIndices :: BookState -> String -> [Abs.Index] -> [Index]
-getIndices bs t indices = map (getIndex bs t) indices
-
-getIndex bs label index = undefined 
-
--- (-1)*T.a
--- -T.a
--- Func (:-) [Indexed (Atom (Tensor "T")) [Lower "a"]]
--- (A.a C^a^c) * (A.a D^a^c)
 
 data Transformation
     = Rewrite { rewriteMatch :: (->) Calc Bool, rewriteWith :: Calc }
@@ -265,25 +234,68 @@ compose = undefined
 
 
 -- data TensorMonad = undefined
+execute :: String -> Calc -> Calc
+execute "distribute" = distribute
+
+-- execute func calc = func calc
+--     where
+--     func = undefined
+--     tensorFunctions = [
+--         ("distribute", distribute)
+--      ]
+
+
 
 -----------------------------------------------------------------------
 -- Basic algebraic convenience
 -----------------------------------------------------------------------
 
 -- eval :: Monad m => m Calc -> BookState -> Book
-eval = undefined 
+eval = undefined
 
  -- Book
  -- let yo = T^...
  -- let dyo = distribute(yo)
  -- let dyo2 = canonicalize(dyo)
 
-
-
-
+-- a*(b+c)*d*(e+f*(g+h)) -> a*b + a*c
 -- a*(b+c) -> a*b + a*c
-distribute :: Abs.Expr -> Abs.Expr
-distribute = undefined
+distribute :: Calc -> Calc
+distribute = flattenCalc . distribute'
+
+-- (a + b) T = +[*[a,T],  
+-- s := a + b
+-- cs := T
+-- 
+-- (a + b)(c + d)(e + f)(g + h)(i + j)
+-- gren1
+-- s := (a+b)
+-- cs := [c, d]
+-- gren2
+-- s := c+d
+-- cs := [a,b]
+-- -> +[*[a,+[c,d]], *[b, +[c,d]]]
+-- \x -> \x -> \x -> \x -> x 
+
+-- first order distribute
+distribute' :: Calc -> Calc
+distribute' c = case c of
+    Prod (Sum cs:fs) -> Sum (map (\x -> distribute' $ Prod (x:fs)) cs)
+    Prod [f, Sum cs] -> Sum (map (\x -> distribute' $ Prod (f:[x])) cs)
+    Prod (f:fs) -> Prod [f, distribute' (Prod fs)]
+    Sum cs -> Sum $ map distribute' cs
+    _ -> c
+
+flattenCalc ::Calc -> Calc
+flattenCalc c = case c of
+    Prod [Prod fs] -> Prod $ recurse fs
+    Prod [f, Prod fs] -> Prod (f:recurse fs)
+    Prod fs -> Prod $ recurse fs
+    Sum [Sum ts] -> Sum $ recurse ts
+    Sum [t, Sum ts] -> Sum (t:recurse ts)
+    Sum ts -> Sum $ recurse ts
+    _ -> c
+    where recurse = map flattenCalc
 
 -- a + a + a -> 3*a
 collectTerms :: Abs.Expr -> Abs.Expr
