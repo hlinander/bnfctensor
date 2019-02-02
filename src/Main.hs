@@ -4,6 +4,7 @@ import System.IO ( stdin, hGetContents )
 import System.Environment ( getArgs )
 import System.Exit ( exitFailure, exitSuccess )
 import System.Console.ANSI
+import System.Console.Readline
 
 import Frontend.LexTensor ( tokens )
 import Frontend.ParTensor ( pBook )
@@ -14,6 +15,7 @@ import Check ( analyzeBook, analyzeBookWithState )
 
 import Data.Typeable
 import Data.Maybe
+import Data.List
 
 import Control.Monad.State
 import Control.Monad.Reader
@@ -22,6 +24,7 @@ import RenderCalc
 import Core (
     BookState(..),
     Calc,
+    TensorType(..),
     calcFromExpr,
     emptyBook
  )
@@ -64,8 +67,34 @@ evalCommand ":show groups <tensor>" = undefined
 evalCommand ":show all groups" = undefined
 evalCommand ":show all groups <name>" = undefined
 
+showTensor :: TensorType -> IO ()
+showTensor t = putStrLn $ tensorName t ++ " [" ++ (intercalate ", " (map show $ tensorIndices t)) ++ "]"
+
+showTensors :: BookState -> IO ()
+showTensors bs = mapM_ showTensor $ bookTensors bs
+
 repl :: IO ()
-repl = replB emptyBook >> return ()
+--repl = replB emptyBook >> return ()
+repl = replRL emptyBook
+
+replRL :: BookState -> IO ()
+replRL bs = do
+  l <- readline "λ> "
+  case l of
+    Nothing -> return ()
+    Just "exit" -> return ()
+    Just "" -> replRL bs
+    Just line -> do
+        addHistory line
+        case line of
+          ":show tensors" -> showTensors bs >> replRL bs
+          ":show variables" -> undefined
+          ":show functions" -> undefined
+          ":show groups <tensor>" -> undefined
+          ":show all groups" -> undefined
+          ":show all groups <name>" -> undefined
+          stmt -> repl' bs stmt >>= replRL
+
 
 replB :: BookState -> IO BookState
 -- replB bs = replB =<< repl' bs =<< getContents
@@ -138,10 +167,14 @@ usage = do
   exitFailure
 
 main :: IO ()
-main = do
-  args <- getArgs
-  case args of
-    ["--help"] -> usage
-    [] -> hGetContents stdin >>= run
-    "-s":fs -> mapM_ runFile fs
-    fs -> mapM_ runFile fs
+main = repl
+
+
+-- main :: IO ()
+-- main = do
+--   args <- getArgs
+--   case args of
+--     ["--help"] -> usage
+--     [] -> hGetContents stdin >>= run
+--     "-s":fs -> mapM_ runFile fs
+--     fs -> mapM_ runFile fs

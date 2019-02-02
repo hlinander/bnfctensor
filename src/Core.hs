@@ -24,17 +24,33 @@ data IndexType = IndexType {
     indexDim :: Int,
     indexGroup :: GroupType,
     indexName :: String
-} deriving Show
+}
+ 
+instance Show IndexType where
+    showsPrec i idx = showString (indexName idx) 
+        . (showParen True 
+        $ shows (indexDim idx)) 
+        . showString ": "
+        . shows (indexGroup idx)
 
 data GroupType = GroupType {
     groupName :: String,
     groupDims :: [Int]
-} deriving Show
+}
+
+instance Show GroupType where
+    showsPrec i g = showString (groupName g) . showList (groupDims g)
 
 data TensorType = TensorType {
     tensorName :: String,
     tensorIndices :: [IndexType]
-} deriving Show
+}
+
+instance Show TensorType where
+    showsPrec i t = showString (tensorName t) 
+        . showString " { "
+        . showList (tensorIndices t)
+        . showString " }"
 
 data ReprType = ReprType {
     reprDim :: Int

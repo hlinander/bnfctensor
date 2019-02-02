@@ -11,3 +11,6 @@ build-docker:
 
 ghci:
 	(cd src && make docker-ghci)
+
+run:
+	docker run --rm -it -v $(PWD)/src:/bnfctensor -w /bnfctensor bnfctensor:latest /bnfctensor/tensor
