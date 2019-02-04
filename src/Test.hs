@@ -41,17 +41,20 @@ arbitraryCalc = oneof [
 -- constructs a self contracted tensor
 arbitrarySelfContraction :: Gen Calc
 arbitrarySelfContraction = do
-    t@(Tensor n ids perm) <- suchThat arbitraryTensor (\(Tensor _ xs _) -> (length xs) >= 2)
-    cid <- arbitrary :: Gen Index
-    slot1 <- choose (0, length ids - 1)
-    slot2 <- suchThat (choose (0, length ids - 1)) (not . (==) slot1)
-    let cids = if slot1 > slot2
-        then (insertAt slot1 cid . insertAt slot2 (flipIndex cid)) ids
-        else (insertAt slot2 cid . insertAt slot1 (flipIndex cid)) ids
-    return $ Op (Contract slot1 slot2) [Tensor n cids perm]
-    where flipIndex i@(Index r v) = i { indexValence = flipValence v }
-          flipValence Up = Down
-          flipValence Down = Up
+    t <- suchThat arbitraryTensor (\(Tensor _ xs) -> (length xs) >= 2)
+    case t of
+        (Tensor n ids) -> do 
+            cid <- (arbitrary :: Gen Index)
+            slot1 <- choose (0, length ids - 1)
+            slot2 <- suchThat (choose (0, length ids - 1)) (not . (==) slot1)
+            let cids = if slot1 > slot2
+                then (insertAt slot1 cid . insertAt slot2 (flipIndex cid)) ids
+                else (insertAt slot2 cid . insertAt slot1 (flipIndex cid)) ids
+            return $ (Contract slot1 slot2) $ Tensor n cids
+                where flipIndex i@(Index r v) = i { indexValence = flipValence v }
+                      flipValence Up = Down
+                      flipValence Down = Up
+        _ -> undefined
 
 -- inserts an element at position idx counted from 0
 insertAt :: Int -> a -> [a] -> [a]
@@ -63,21 +66,20 @@ insertAt idx x xs = lh ++ x:rh
 arbitrarySum :: Gen Calc
 arbitrarySum = do
     tensor <- arbitraryTensor
-    return $ Op (:+) [tensor, tensor]
+    return $ tensor |+| tensor
 
 arbitraryProduct :: Gen Calc
 arbitraryProduct = do
     tensor1 <- oneof [arbitraryTensor, arbitrarySelfContraction]
     tensor2 <- oneof [arbitraryTensor, arbitrarySelfContraction]
-    return $ Op (:*) [tensor1, tensor2]
+    return $ tensor1 |*| tensor2
 
 -- only generates identity permutations
 arbitraryTensor :: Gen Calc
 arbitraryTensor = do
     indices <- listOf arbitrary
     name <- arbitraryIdentifier
-    let perm = identity $ length indices
-    return $ Tensor name indices perm
+    return $ Tensor name indices
 
 -- only generates parsable identifiers
 arbitraryIdentifier :: Gen String
