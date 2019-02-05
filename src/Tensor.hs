@@ -55,6 +55,28 @@ freeIndexSlots_ x s = case x of
         leftHand ++ offsetIndices leftHand rightHand
         -- where offset lh rh = [ (s, i + length lh) | (s,i) <- rh ]
 
+freeIndexPos :: Expr -> [(Index, Int)]
+freeIndexPos x = freeIndexPos_ x []
+
+freeIndexPos_ :: Expr -> [(Index, Int)] -> [(Index, Int)]
+freeIndexPos_ x s = case x of
+        -- in s, in indices or free
+    Tensor _ indices -> filter isFree (zip indices [0..])
+        where isFree (index, _) = not (indexLabelIn index (map fst s) || occurences index indices > 1)
+              occurences x list = length $ filter (valenceFreeEq x) list
+    Neg expr -> freeIndexPos_ expr s
+    Div expr1 expr2 -> freeIndexPos_ expr1 s
+    Number integer -> []
+    Fraction integer1 integer2 -> []
+    Add expr1 expr2 -> freeIndexPos_ expr1 s
+    Sub expr1 expr2 -> freeIndexPos_ expr1 s
+    Func label exprs -> undefined
+    Mul expr1 expr2 -> do
+        let leftHand = freeIndexPos_ expr1 (s ++ freeIndexPos_ expr2 s)
+        let rightHand = freeIndexPos_ expr2 (s ++ freeIndexPos_ expr1 s)
+        leftHand ++ offsetIndices leftHand rightHand
+        -- where offset lh rh = [ (s, i + length lh) | (s,i) <- rh ]
+
 offsetIndices :: [(Index, Int)] -> [(Index, Int)] -> [(Index, Int)]
 offsetIndices lh rh = [ (s, i + length lh) | (s,i) <- rh ]
 

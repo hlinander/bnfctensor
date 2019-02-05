@@ -4,7 +4,7 @@ module Core where
 -- Book analysis
 -----------------------------------------------------------------------
 
-import qualified Frontend.AbsTensor as Abs (
+mport qualified Frontend.AbsTensor as Abs (
     Expr(..),
     Index(..),
     Label(..)
@@ -126,33 +126,57 @@ c1 |*| c2 = Prod [c1, c2]
 (|+|) :: Calc -> Calc -> Calc
 c1 |+| c2 = Sum [c1, c2]
 
-calcFromExpr :: Abs.Expr -> Reader BookState Calc
+calcFromExpr :: Abs.Expr -> Reader BookState (Calc, [(String, Index)])
 calcFromExpr x = case x of
-  Abs.Add expr1 expr2 -> Sum <$> mapM calcFromExpr [expr1, expr2]
+  Abs.Add expr1 expr2 -> do
+    (calc1, idx1) <- calcFromExpr expr1
+    (calc2, idx2) <- calcFromExpr expr2
+    return (calc1 |+| calc2, idx1)
+    --Sum <$> mapM calcFromExpr [expr1, expr2]
   Abs.Sub expr1 expr2 -> do
-    calc1 <- calcFromExpr expr1
-    calc2 <- calcFromExpr expr2
-    return $ calc1 |+| Number (-1) |*| calc2
+    (calc1, idx1) <- calcFromExpr expr1
+    (calc2, idx2) <- calcFromExpr expr2
+    return (calc1 |+| Number (-1) |*| calc2, idx1)
   Abs.Neg expr -> do
-    calc <- calcFromExpr expr
-    return $ Number (-1) |*| calc
+    (calc, idx) <- calcFromExpr expr
+    return (Number (-1) |*| calc, idx)
   Abs.Div expr (Abs.Number num) -> do
-    calc <- calcFromExpr expr
-    return $ calc |*| Number (1 % num)
+    (calc, idx) <- calcFromExpr expr
+    return (calc |*| Number (1 % num), idx)
   Abs.Div expr (Abs.Fraction p q) -> do
-    calc <- calcFromExpr expr
-    return $ calc |*| Number (p % q)
+    (calc, idx) <- calcFromExpr expr
+    return (calc |*| Number (p % q), idx)
   Abs.Div _ _ -> undefined
-  Abs.Tensor (Abs.Label _) _ -> selfContractions x
-  Abs.Number p -> return $ Number (fromInteger p)
-  Abs.Fraction p q -> return $ Number (p % q)
+  Abs.Tensor (Abs.Label l) absIdx -> do
+    tensorType <- asks (lookupTensor l)
+    let indices = zip absIdx $ tensorIndices tensorType
+    let indices' = map (uncurry indexTypeToIndex) indices
+    let freeSlots = freeIndexPos x
+    let freeSlotsPos = map snd freeSlots
+    let freeSlotsLabels = map (indexLabel.fst) freeSlots
+    let freeIndices' = map (indices'!!) freeSlotsPos
+    let freeIndicesAndLabels = zip freeSlotsLabels freeIndices'
+    let sortedIdxAndLabels = sortBy (\(a, _) (b, _) -> compare a b) freeIndicesAndLabels
+    let perm = inverse $ sortingPermutationAsc freeSlotsLabels
+    calc <- selfContractions x
+    return (Permute perm calc, sortedIdxAndLabels)
+  Abs.Number p -> return (Number (fromInteger p), [])
+  Abs.Fraction p q -> return (Number (p % q), [])
   Abs.Mul expr1 expr2 -> do
-    calc1 <- calcFromExpr expr1
-    calc2 <- calcFromExpr expr2
-    return (contract pairs $ calc1 |*| calc2)
-        where pairs = contractedPairs expr1 expr2
-              -- free1 = freeIndexSlots expr1
+    (calc1, idx1) <- calcFromExpr expr1
+    (calc2, idx2) <- calcFromExpr expr2
+    let pairs = contractedPairs expr1 expr2
+    let c1 = map (snd.fst) pairs
+    let c2 = map (snd.snd) pairs
+    let f1 = foldr deleteAt idx1 c1
+    let f2 = foldr deleteAt idx1 c1
+    return (contract pairs $ calc1 |*| calc2, f1 ++ f2)
+
   _ -> undefined
+
+deleteAt :: Int -> [a] -> [a]
+deleteAt idx l = lh ++ rh
+    where (lh,_:rh) = splitAt idx l
 
 -- Create nested contractions for a list of contraction pairs of slots
 contract :: [ContractPair] -> Calc -> Calc

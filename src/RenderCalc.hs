@@ -4,9 +4,11 @@ import Data.List
 import Data.Ratio
 
 import qualified Control.Monad.Reader as R
+import qualified Control.Monad.State as S
 
 import Core
 import Util
+import Debug.Trace
 
 data Component
     = StartOp
@@ -70,37 +72,50 @@ type RenderState = ([ContractType], Offset)
 freeLabels :: [String]
 freeLabels = map (\x -> "m" ++ show x) ([0..] :: [Integer])
 
-renderCalc :: (Component -> String) -> (String -> String) -> Calc -> R.Reader RenderState String
-renderCalc target indent x = case x of
+emptyRenderEnv = ([], 0)
+
+renderConsole :: Calc -> String
+renderConsole = flip renderCalc console
+
+renderCalc :: Calc -> (Component -> String) -> String
+renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' f x) emptyRenderEnv) ["a", "b", "c"]
+
+renderCalc' :: (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
+renderCalc' target x = case x of
     Sum terms -> do
-        let open = indent (target StartOp)  ++ (indent.indent) (target OpenParen)
-        mlterms' <- mapM (renderCalc target (indent.indent)) terms
-        let mlterms = intercalate ((indent.indent) (target Plus)) mlterms'
-        let close = (indent.indent) (target CloseParen) ++ indent (target EndOp)
+        let open = (target StartOp)  ++ (target OpenParen)
+        mlterms' <- mapM (renderCalc' target) terms
+        let mlterms = intercalate (target Plus) mlterms'
+        let close = (target CloseParen) ++ (target EndOp)
         return $ open ++ mlterms ++ close
     Prod factors -> do
-        let open = indent (target StartOp)
+        let open = (target StartOp)
         (contractions, offset) <- R.ask
         let freeSlots = map numFreeSlots factors
-        let offsets = init $ scanl (+) 0 freeSlots
-        let factorsOffsets = zip factors offsets
+        let offsets = init $ scanl (+) 0 (traceShowId freeSlots)
+        let factorsOffsets = zip factors (traceShowId offsets)
         factors' <- mapM (\(f, ns) -> R.local (const (contractions, offset + ns))
-            $ renderCalc target (indent.indent) f) factorsOffsets
+            $ renderCalc' target f) factorsOffsets
         let mlfactors = intercalate (target Times) factors'
-        let close = indent (target EndOp)
+        let close = (target EndOp)
         return $ open ++ mlfactors ++ close
     Contract i1 i2 t -> do
+        oldState <- S.get
+        let newState = drop 1 oldState
+        let dummy = head oldState
+        S.put newState
         (contractions, offset) <- R.ask
-        let newContractions = contractions ++ [(i1, "x"),(i2, "x")]
-        R.local (const (newContractions, offset)) (renderCalc target indent t)
+        let newContractions = contractions ++ [(i1, dummy),(i2, dummy)]
+        R.local (const (newContractions, offset)) (renderCalc' target t)
     Number n ->
-        return $ indent (target StartFrac) ++ (show p) ++ (if q == 1 then "" else (target MidFrac) ++ (show q)) ++ (target EndFrac)
+        return $ (target StartFrac) ++ (show p) ++ (if q == 1 then "" else (target MidFrac) ++ (show q)) ++ (target EndFrac)
       where p = numerator n
             q = denominator n
+    Permute p c -> renderCalc' target c
     Tensor name indices -> do
         (contractions, offset) <- R.ask
-        let open = indent (target StartTensor)
-        let mlname = indent (target StartIdent) ++ name ++ (target EndIdent)
+        let open = (target StartTensor)
+        let mlname = (target StartIdent) ++ name ++ (target EndIdent)
         -- List with other free (and possibly contracted in other factors)
         -- indices, this tensors indices (in local index
         -- positions) and an infinite continuation.
@@ -109,23 +124,26 @@ renderCalc target indent x = case x of
         -- I.e. a tensor with 3 indices, preceded by 2 other free indices in expression would look like
         -- [(-1),(-1),0,1,2,(-1),(-1),...]
         -- for example T.a.d * S^a^b^c when at the node for S.
-        let globalIndices = (replicate offset (-1)) ++ [0..(length indices - 1)] ++ repeat (-1)
+        let globalIndices = (replicate (trace ("offset " ++ show offset) offset) (-1)) ++ [0..(length indices - 1)] ++ repeat (-1)
         -- Create a list of contracted indices together with their local index
         let (_, dummies) = foldr reduceTensorDummies (globalIndices, []) contractions
+        -- Create a list of contracted indices together with their global index
+        let (_, globalDummies) = foldr reduceTensorDummies ([0..], []) contractions
         -- Filter for indices pertaining to this tensor
-        let relevantDummies = filter ((0 <=).fst) dummies
+        let relevantDummies = filter ((0 <=).fst) (traceShowId dummies)
         let dummyPositions = map fst dummies
         -- Free indices are the complement of the dummies
         let frees = [0..(length indices - 1)] \\ dummyPositions
-        let freeOffset = length $ filter (\(i, _) -> i < offset) contractions
+        -- How many free indices are there before this tensor?
+        let freeOffset = length $ filter (\(i, _) -> i < offset) (traceShowId globalDummies)
         -- Associate labels with the free indices
-        let freesWithLabels = zip frees (drop (offset - freeOffset) freeLabels)
+        let freesWithLabels = zip frees (drop (offset - (traceShowId freeOffset)) freeLabels)
         let allIndices_ = freesWithLabels ++ relevantDummies
         -- Sort in ascending in index position
         let allIndices = sortBy (\(a, _) (b, _) -> compare a b) allIndices_
         -- Get labels
         let mlindices = map snd allIndices
-        let close = indent (target EndTensor)
+        let close = (target EndTensor)
         return $ open ++ mlname ++ concat mlindices ++ close
     _ -> undefined
 
@@ -139,10 +157,10 @@ replaceWithBullets :: Int -> a -> [a] -> [a]
 replaceWithBullets idx x xs = lh ++ [x] ++ rh
     where (lh, (r:rh)) = (splitAt idx xs)
 
-renderIndex :: (Component -> String) -> (String -> String) -> Index -> String -> String
-renderIndex target indent (Index{indexValence=Up}) label = (target IndexPH) ++ mlname
+renderIndex :: (Component -> String) -> Index -> String -> String
+renderIndex target (Index{indexValence=Up}) label = (target IndexPH) ++ mlname
   where mlname = (target StartIdent) ++ (target StartUp) ++ label ++ (target EndIdent)
-renderIndex target indent (Index{indexValence=Down}) label = mlname ++ (target IndexPH)
+renderIndex target (Index{indexValence=Down}) label = mlname ++ (target IndexPH)
   where mlname = (target StartIdent) ++ (target StartDown) ++ label ++ (target EndIdent)
 
 -- Should be one line
@@ -163,4 +181,5 @@ numFreeSlots x = case x of
     Sum terms -> numFreeSlots $ head terms
     Contract _ _ expr -> numFreeSlots expr - 2
     Tensor _ idxs -> length idxs
+    Permute _ t -> numFreeSlots t
     _ -> 0
