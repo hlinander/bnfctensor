@@ -65,20 +65,25 @@ console StartUp      = "^"
 console StartDown    = "."
 
 type FreeIndex = Int
-type ContractType = (FreeIndex, String)
-type Offset = Int
-type RenderState = ([ContractType], Offset)
+type FreeIndices = [String]
+type RenderState = FreeIndices
 
 freeLabels :: [String]
 freeLabels = map (\x -> "m" ++ show x) ([0..] :: [Integer])
 
-emptyRenderEnv = ([], 0)
+emptyRenderEnv :: RenderState
+emptyRenderEnv = freeLabels
 
 renderConsole :: Calc -> String
 renderConsole = flip renderCalc console
 
 renderCalc :: Calc -> (Component -> String) -> String
 renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' f x) emptyRenderEnv) ["a", "b", "c"]
+
+getFreesForFactors :: [Int] -> [String] -> [[String]]
+getFreesForFactors freeSlots frees = freesFactors
+    where reduce (ff, remaining) nFree = (ff ++ [take nFree remaining], drop nFree remaining)
+          (freesFactors, _) = foldl reduce ([], frees) freeSlots
 
 renderCalc' :: (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
 renderCalc' target x = case x of
@@ -90,61 +95,36 @@ renderCalc' target x = case x of
         return $ open ++ mlterms ++ close
     Prod factors -> do
         let open = (target StartOp)
-        (contractions, offset) <- R.ask
+        frees <- R.ask
         let freeSlots = map numFreeSlots factors
-        let offsets = init $ scanl (+) 0 (traceShowId freeSlots)
-        let factorsOffsets = zip factors (traceShowId offsets)
-        factors' <- mapM (\(f, ns) -> R.local (const (contractions, offset + ns))
-            $ renderCalc' target f) factorsOffsets
+        let freesFactors = getFreesForFactors freeSlots frees
+        let factorsWithFrees = zip factors freesFactors
+        factors' <- mapM (\(f, localFrees) -> R.local (const localFrees)
+            $ renderCalc' target f) factorsWithFrees
         let mlfactors = intercalate (target Times) factors'
         let close = (target EndOp)
         return $ open ++ mlfactors ++ close
-    Contract i1 i2 t -> do
+    Contract i1 i2 t | i1 < i2 -> do
         oldState <- S.get
         let newState = drop 1 oldState
         let dummy = head oldState
         S.put newState
-        (contractions, offset) <- R.ask
-        let newContractions = contractions ++ [(i1, dummy),(i2, dummy)]
-        R.local (const (newContractions, offset)) (renderCalc' target t)
+        frees <- R.ask
+        let newFrees = insertAt i2 dummy $ insertAt i1 dummy frees
+        R.local (const newFrees) (renderCalc' target t)
+    Contract i1 i2 t | i1 > i1 -> undefined
     Number n ->
         return $ (target StartFrac) ++ (show p) ++ (if q == 1 then "" else (target MidFrac) ++ (show q)) ++ (target EndFrac)
       where p = numerator n
             q = denominator n
     Permute p c -> renderCalc' target c
     Tensor name indices -> do
-        (contractions, offset) <- R.ask
+        localFrees <- R.ask
         let open = (target StartTensor)
-        let mlname = (target StartIdent) ++ name ++ (target EndIdent)
-        -- List with other free (and possibly contracted in other factors)
-        -- indices, this tensors indices (in local index
-        -- positions) and an infinite continuation.
-        -- Enables the conversion from contraction indices (relative all free
-        -- indices) to local indices (w.r.t this tensor)
-        -- I.e. a tensor with 3 indices, preceded by 2 other free indices in expression would look like
-        -- [(-1),(-1),0,1,2,(-1),(-1),...]
-        -- for example T.a.d * S^a^b^c when at the node for S.
-        let globalIndices = (replicate (trace ("offset " ++ show offset) offset) (-1)) ++ [0..(length indices - 1)] ++ repeat (-1)
-        -- Create a list of contracted indices together with their local index
-        let (_, dummies) = foldr reduceTensorDummies (globalIndices, []) contractions
-        -- Create a list of contracted indices together with their global index
-        let (_, globalDummies) = foldr reduceTensorDummies ([0..], []) contractions
-        -- Filter for indices pertaining to this tensor
-        let relevantDummies = filter ((0 <=).fst) (traceShowId dummies)
-        let dummyPositions = map fst dummies
-        -- Free indices are the complement of the dummies
-        let frees = [0..(length indices - 1)] \\ dummyPositions
-        -- How many free indices are there before this tensor?
-        let freeOffset = length $ filter (\(i, _) -> i < offset) (traceShowId globalDummies)
-        -- Associate labels with the free indices
-        let freesWithLabels = zip frees (drop (offset - (traceShowId freeOffset)) freeLabels)
-        let allIndices_ = freesWithLabels ++ relevantDummies
-        -- Sort in ascending in index position
-        let allIndices = sortBy (\(a, _) (b, _) -> compare a b) allIndices_
-        -- Get labels
-        let mlindices = map snd allIndices
+        let nameString = (target StartIdent) ++ name ++ (target EndIdent)
+        let indicesString = concat (take (length indices) localFrees)
         let close = (target EndTensor)
-        return $ open ++ mlname ++ concat mlindices ++ close
+        return $ open ++ nameString ++ indicesString ++ close
     _ -> undefined
 
 reduceTensorDummies :: (Int, b1) -> ([b2], [(b2, b1)]) -> ([b2], [(b2, b1)])

@@ -4,7 +4,7 @@ module Core where
 -- Book analysis
 -----------------------------------------------------------------------
 
-mport qualified Frontend.AbsTensor as Abs (
+import qualified Frontend.AbsTensor as Abs (
     Expr(..),
     Index(..),
     Label(..)
