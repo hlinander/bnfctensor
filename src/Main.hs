@@ -94,7 +94,7 @@ replRL bs = do
           ":show all groups" -> undefined
           ":show all groups <name>" -> undefined
           ":load" -> do
-            bs' <- loadBook "book" 
+            bs' <- loadBook "book"
             showTensors bs'
             replRL bs'
           stmt -> repl' bs stmt >>= replRL

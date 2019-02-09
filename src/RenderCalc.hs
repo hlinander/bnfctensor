@@ -134,33 +134,11 @@ renderCalc' target x = case x of
         return $ open ++ nameString ++ indicesString ++ close
     _ -> undefined
 
-reduceTensorDummies :: (Int, b1) -> ([b2], [(b2, b1)]) -> ([b2], [(b2, b1)])
-reduceTensorDummies (i, label) (remainingGlobal, pairs) = (newRemaining, newPairs)
-    where (newRemaining, localIndex) = popAt i remainingGlobal
-          newPairs = pairs ++ [(localIndex, label)]
-
-
-replaceWithBullets :: Int -> a -> [a] -> [a]
-replaceWithBullets idx x xs = lh ++ [x] ++ rh
-    where (lh, (r:rh)) = (splitAt idx xs)
-
 renderIndex :: (Component -> String) -> Index -> String -> String
 renderIndex target (Index{indexValence=Up}) label = (target IndexPH) ++ mlname
   where mlname = (target StartIdent) ++ (target StartUp) ++ label ++ (target EndIdent)
 renderIndex target (Index{indexValence=Down}) label = mlname ++ (target IndexPH)
   where mlname = (target StartIdent) ++ (target StartDown) ++ label ++ (target EndIdent)
-
--- Should be one line
-splitSpaces :: [String] -> [Calc] -> [[String]]
-splitSpaces = splitSpaces' []
-
-splitSpaces' :: [[a]] -> [a] -> [Calc] -> [[a]]
-splitSpaces' currentOut _ [] = currentOut
-splitSpaces' currentOut currentSpace (next:rest) = splitSpaces' nextOut nextSpace remainingFactors
-    where
-        nextOut = currentOut ++ [take (numFreeSlots next) currentSpace]
-        nextSpace = drop (numFreeSlots next) currentSpace
-        remainingFactors = rest
 
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of

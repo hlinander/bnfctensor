@@ -25,11 +25,11 @@ data IndexType = IndexType {
     indexGroup :: GroupType,
     indexName :: String
 }
- 
+
 instance Show IndexType where
-    showsPrec i idx = showString (indexName idx) 
-        . (showParen True 
-        $ shows (indexDim idx)) 
+    showsPrec i idx = showString (indexName idx)
+        . (showParen True
+        $ shows (indexDim idx))
         . showString ": "
         . shows (indexGroup idx)
 
@@ -47,7 +47,7 @@ data TensorType = TensorType {
 }
 
 instance Show TensorType where
-    showsPrec i t = showString (tensorName t) 
+    showsPrec i t = showString (tensorName t)
         . showString " { "
         . showList (tensorIndices t)
         . showString " }"
@@ -99,24 +99,6 @@ data Index = Index {
 
 data ValenceType = Up | Down deriving Show
 
--- Index positions is fragile against tree modifications under the contraction
--- tensor T { a(2), b(2): SO(3) }
--- symmatric T
--- -- Contract index .a and .c in the expression below
--- contract(T.a.b T.c.d, [1, 3]) ~ T.a.b T^a.d
--- -- Now use the symmetry in T to swap .a and .b, how should the contraction be kept up to date?
--- -- Compute-wise the natural thing would be to move the contraction to
--- contract(T.b.a T.c.d, [2, 3])
--- 
-
--- Index labels are more flexible and naturally handles the above case but gives rise to
--- the unatural usage of specific labels and extra logic when traversing.
-
--- (T^a.a.c.b + S.b.c) U^b
--- ({0,1}T[4])
--- permutations depend on the order further down in the tree so they want to be constructed
--- from the bottom up.
-
 infixl 5 |*|
 infixl 4 |+|
 
@@ -130,12 +112,11 @@ calcFromExpr :: Abs.Expr -> Reader BookState (Calc, [(String, Index)])
 calcFromExpr x = case x of
   Abs.Add expr1 expr2 -> do
     (calc1, idx1) <- calcFromExpr expr1
-    (calc2, idx2) <- calcFromExpr expr2
+    (calc2, _) <- calcFromExpr expr2
     return (calc1 |+| calc2, idx1)
-    --Sum <$> mapM calcFromExpr [expr1, expr2]
   Abs.Sub expr1 expr2 -> do
     (calc1, idx1) <- calcFromExpr expr1
-    (calc2, idx2) <- calcFromExpr expr2
+    (calc2, _) <- calcFromExpr expr2
     return (calc1 |+| Number (-1) |*| calc2, idx1)
   Abs.Neg expr -> do
     (calc, idx) <- calcFromExpr expr
@@ -176,10 +157,6 @@ calcFromExpr x = case x of
     return (Permute perm $ contract pairs $ calc1 |*| calc2, f')
 
   _ -> undefined
-
-deleteAt :: Int -> [a] -> [a]
-deleteAt idx l = lh ++ rh
-    where (lh,_:rh) = splitAt idx l
 
 -- Create nested contractions for a list of contraction pairs of slots
 contract :: [ContractPair] -> Calc -> Calc
@@ -228,14 +205,9 @@ unsafeMaybe :: Maybe a -> a
 unsafeMaybe (Just x) = x
 unsafeMaybe _ = undefined
 
-tensorLabelPermution :: Abs.Expr -> Permutation
-tensorLabelPermution (Abs.Tensor _ idxs) = inverse $ sortingPermutationAsc (map indexLabel idxs)
-tensorLabelPermution _ = undefined
-
 selfContractions :: Abs.Expr -> Reader BookState Calc
 selfContractions (Abs.Tensor (Abs.Label l) idxs) = do
         tensorType <- asks (lookupTensor l)
-        --let indices = map (uncurry indexTypeToIndex) $ zip idxs (tensorIndices tensorType)
         let indices = zipWith indexTypeToIndex idxs (tensorIndices tensorType)
         return $ contract (contractedIndexPairs idxs) (Tensor l indices)
 selfContractions _ = undefined

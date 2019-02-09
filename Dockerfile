@@ -6,3 +6,4 @@ WORKDIR /hie
 RUN make hie-8.6.3
 RUN make build-doc-8.6.3
 RUN apt install bnfc alex happy
+RUN cabal install split
