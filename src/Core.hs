@@ -147,10 +147,12 @@ calcFromExpr x = case x of
     (calc1, idx1) <- calcFromExpr expr1
     (calc2, idx2) <- calcFromExpr expr2
     let pairs = contractedPairs expr1 expr2
+    let offset = length (freeIndexSlots expr1)
     let c1 = map (snd.fst) pairs
     let c2 = map (snd.snd) pairs
+    let c2' = map (\x -> x - offset) c2
     let f1 = foldr deleteAt idx1 c1
-    let f2 = foldr deleteAt idx2 c2
+    let f2 = foldr deleteAt idx2 c2'
     let f = map fst $ f1 ++ f2
     let perm = inverse $ sortingPermutationAsc f
     let f' = permuteList perm (f1 ++ f2)
