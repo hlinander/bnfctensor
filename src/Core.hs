@@ -169,8 +169,11 @@ calcFromExpr x = case x of
     let c1 = map (snd.fst) pairs
     let c2 = map (snd.snd) pairs
     let f1 = foldr deleteAt idx1 c1
-    let f2 = foldr deleteAt idx1 c1
-    return (contract pairs $ calc1 |*| calc2, f1 ++ f2)
+    let f2 = foldr deleteAt idx2 c2
+    let f = map fst $ f1 ++ f2
+    let perm = inverse $ sortingPermutationAsc f
+    let f' = permuteList perm (f1 ++ f2)
+    return (Permute perm $ contract pairs $ calc1 |*| calc2, f')
 
   _ -> undefined
 

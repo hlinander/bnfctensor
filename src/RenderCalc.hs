@@ -2,6 +2,7 @@ module RenderCalc where
 
 import Data.List
 import Data.Ratio
+import qualified Math.Combinat.Permutations as P
 
 import qualified Control.Monad.Reader as R
 import qualified Control.Monad.State as S
@@ -64,12 +65,15 @@ console IndexPH      = ""
 console StartUp      = "^"
 console StartDown    = "."
 
-type FreeIndex = Int
 type FreeIndices = [String]
 type RenderState = FreeIndices
 
 freeLabels :: [String]
-freeLabels = map (\x -> "m" ++ show x) ([0..] :: [Integer])
+freeLabels = map (:[]) ['a'..'z']
+
+dummyLabels :: [String]
+dummyLabels = map (:[]) ['A'..'Z']
+-- freeLabels = map (\x -> "d" ++ show x) ([0..] :: [Integer])
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
@@ -78,7 +82,7 @@ renderConsole :: Calc -> String
 renderConsole = flip renderCalc console
 
 renderCalc :: Calc -> (Component -> String) -> String
-renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' f x) emptyRenderEnv) ["a", "b", "c"]
+renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' f x) emptyRenderEnv) dummyLabels
 
 getFreesForFactors :: [Int] -> [String] -> [[String]]
 getFreesForFactors freeSlots frees = freesFactors
@@ -117,7 +121,10 @@ renderCalc' target x = case x of
         return $ (target StartFrac) ++ (show p) ++ (if q == 1 then "" else (target MidFrac) ++ (show q)) ++ (target EndFrac)
       where p = numerator n
             q = denominator n
-    Permute p c -> renderCalc' target c
+    Permute p c -> do
+        localFrees <- R.ask
+        let newFrees = P.permuteList p localFrees
+        R.local (const newFrees) $ renderCalc' target c
     Tensor name indices -> do
         localFrees <- R.ask
         let open = (target StartTensor)
