@@ -28,6 +28,8 @@ data Component
     | IndexPH
     | StartUp
     | StartDown
+    | EndUp
+    | EndDown
 
 mathML :: Component -> String
 mathML StartOp      = "<mrow>\n"
@@ -44,12 +46,14 @@ mathML StartIdent   = "<mi>"
 mathML EndIdent     = "</mi>"
 mathML EndTensor    = "\n</mmultiscripts>"
 mathML IndexPH      = "<none/>"
-mathML StartUp      = ""
-mathML StartDown    = ""
+mathML StartUp      = "<mi>"
+mathML StartDown    = "<mi>"
+mathML EndUp        = "</mi>"
+mathML EndDown      = "</mi>"
 
 console :: Component -> String
-console StartOp      = ""
-console EndOp        = ""
+console StartOp      = "("
+console EndOp        = ")"
 console Plus         = " + "
 console Times        = " ⊗ "
 console OpenParen    = "("
@@ -64,6 +68,8 @@ console EndTensor    = ""
 console IndexPH      = ""
 console StartUp      = "^"
 console StartDown    = "."
+console EndUp      = ""
+console EndDown    = ""
 
 type FreeIndices = [String]
 type RenderState = FreeIndices
@@ -127,18 +133,19 @@ renderCalc' target x = case x of
         R.local (const newFrees) $ renderCalc' target c
     Tensor name indices -> do
         localFrees <- R.ask
+        let theIndices = zip localFrees indices
         let open = (target StartTensor)
         let nameString = (target StartIdent) ++ name ++ (target EndIdent)
-        let indicesString = concat (take (length indices) localFrees)
+        let indicesString = concat $ map (renderIndex target) theIndices --concat (take (length indices) localFrees)
         let close = (target EndTensor)
         return $ open ++ nameString ++ indicesString ++ close
     _ -> undefined
 
-renderIndex :: (Component -> String) -> Index -> String -> String
-renderIndex target (Index{indexValence=Up}) label = (target IndexPH) ++ mlname
-  where mlname = (target StartIdent) ++ (target StartUp) ++ label ++ (target EndIdent)
-renderIndex target (Index{indexValence=Down}) label = mlname ++ (target IndexPH)
-  where mlname = (target StartIdent) ++ (target StartDown) ++ label ++ (target EndIdent)
+renderIndex :: (Component -> String) -> (String, Index) -> String
+renderIndex target (label, Index{indexValence=Up}) = (target IndexPH) ++ mlname
+  where mlname = (target StartIdent) ++ (target StartUp) ++ label ++ (target EndUp) ++ (target EndIdent)
+renderIndex target (label, Index{indexValence=Down}) = mlname ++ (target IndexPH)
+  where mlname = (target StartIdent) ++ (target StartDown) ++ label ++ (target EndDown) ++ (target EndIdent)
 
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of

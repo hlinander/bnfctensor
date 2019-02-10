@@ -15,6 +15,7 @@ import Core (
     IndexType(..),
     FunctionType(..),
     TensorType(..),
+    lookupTensor,
     emptyBook
  )
 
@@ -39,9 +40,13 @@ analyzeStmt stmt = case stmt of
     _ -> return stmt
 
 analyzeTensorDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
-analyzeTensorDef lls def = mapM_ tensorAppend (map tensor labels)
+analyzeTensorDef lls def = mapM_ maybeAppend (map tensor labels)
     where labels = map labelsFromList lls
           tensor label = TensorType label (analyzeIndices def)
+          maybeAppend l = do
+            defined <- tensorDefined l
+            if defined then fail $ "Tensor already defined: " -- ++ show $ lookupTensor l
+            else tensorAppend l
 
 analyzeIndex :: TensorDef -> [IndexType]
 analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = map indexType indices
@@ -129,3 +134,8 @@ tensorAppend tensor = modify (\t -> t { bookTensors = tensor : bookTensors t })
 
 funcAppend :: Monad m => FunctionType -> StateT BookState m ()
 funcAppend f = modify (\t -> t { bookFuncs = f : bookFuncs t })
+
+tensorDefined :: Monad m => TensorType -> StateT BookState m Bool
+tensorDefined l = do
+    bs <- get
+    return $ any (\t -> tensorName t == tensorName l) $ bookTensors bs

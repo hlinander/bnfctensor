@@ -15,7 +15,8 @@ import Check ( analyzeBook, analyzeBookWithState )
 
 import Data.Typeable
 import Data.Maybe
-import Data.List
+import Data.List as L
+import Data.Map as M
 
 import Control.Monad.State
 import Control.Monad.Reader
@@ -26,6 +27,7 @@ import Core (
     Calc,
     TensorType(..),
     calcFromExpr,
+    tensorTypeFromCalc,
     emptyBook
  )
 
@@ -46,25 +48,25 @@ putSuccess msg = putColor Green msg
 
 type ReplState = (BookState, [String])
 
-evalExpr :: BookState -> Expr -> IO BookState
-evalExpr bs expr = do
+evalExpr :: String -> BookState -> Expr -> IO BookState
+evalExpr var bs expr = do
     let (calc, idx) = runReader (calcFromExpr expr) bs
     putStrLn $ renderCalc calc console
     -- putStrLn $ show idx
-    return $ appendCalc bs calc
+    return $ appendCalc bs var calc -- TODO FIXME PLS DOES NOT APPEND ANYMORE
 
 evalStatement :: BookState -> Stmt -> IO BookState
 evalStatement bs stmt  = case stmt of
-    StmtAssign (Label var) expr -> putStr (var ++ " := ") >> evalExpr bs expr
-    StmtVoid expr -> evalExpr bs expr
+    StmtAssign (Label var) expr -> putStr (var ++ " := ") >> evalExpr var bs expr
+    StmtVoid expr -> evalExpr "" bs expr
     StmtFuncDef name exprs stmts -> undefined
-    StmtTensorDef ts ds -> (putSuccess $ concat $ map show ts) >> return bs
+    StmtTensorDef ts ds -> (putSuccess $ concat $ L.map show ts) >> return bs
 
 attemptCompletion :: BookState -> String -> Int -> Int -> IO (Maybe (String, [String]))
 attemptCompletion bs s _ _ = undefined
 
 showTensor :: TensorType -> IO ()
-showTensor t = putStrLn $ tensorName t ++ " [" ++ (intercalate ", " (map show $ tensorIndices t)) ++ "]"
+showTensor t = putStrLn $ tensorName t ++ " [" ++ (intercalate ", " (L.map show $ tensorIndices t)) ++ "]"
 
 showTensors :: BookState -> IO ()
 showTensors bs = mapM_ showTensor $ bookTensors bs
@@ -73,7 +75,6 @@ loadBook :: FilePath -> IO BookState
 loadBook f = readFile f >>= repl' emptyBook
 
 repl :: IO ()
---repl = replB emptyBook >> return ()
 repl = replRL emptyBook
 
 replRL :: BookState -> IO ()
@@ -99,17 +100,6 @@ replRL bs = do
             replRL bs'
           stmt -> repl' bs stmt >>= replRL
 
-
-replB :: BookState -> IO BookState
--- replB bs = replB =<< repl' bs =<< getContents
-replB bs = getLine >>= repl' bs >>= replB
--- >>=
-
-  -- do
-  -- lol <- getContents
-  -- lol' <- repl' bs lol
-  -- replB lol'
-
 repl' :: BookState -> String -> IO BookState
 repl' bs input = case parse input of
     Ok ast -> case analyzeBookWithState bs ast of
@@ -123,10 +113,13 @@ handleStmts :: BookState -> [Stmt] -> IO BookState
 handleStmts bs [] = return bs
 handleStmts bs (st:sts) = evalStatement bs st >>= flip handleStmts sts
 
--- handleStmt :: 
-
-appendCalc :: BookState -> Calc -> BookState
-appendCalc bs c = bs { bookCalcs = c : bookCalcs bs }
+appendCalc :: BookState -> String -> Calc -> BookState
+appendCalc bs s c = bs {
+    bookCalcs = M.insert s c $ bookCalcs bs,
+    bookTensors = (tensorTypeFromCalc s c) : (bookTensors bs)
+}
+-- appendCalc :: BookState -> Calc -> BookState
+-- appendCalc bs c = bs { bookCalcs = c : bookCalcs bs }
 
 -- run :: String -> IO ()
 -- run s = case parse s of

@@ -13,12 +13,11 @@ import Data.Ratio
 import qualified Data.Map as M
 import Data.List
 import Math.Combinat.Permutations
-import Tensor
+import qualified Tensor as T
 import Util
 import Control.Monad.Reader
 
 import Debug.Trace
-import Frontend.PrintTensor
 
 data IndexType = IndexType {
     indexDim :: Int,
@@ -53,7 +52,8 @@ instance Show TensorType where
         . showString " }"
 
 data ReprType = ReprType {
-    reprDim :: Int
+    reprDim :: Int,
+    reprGroup :: GroupType
 } deriving Show
 
 data FunctionType = FunctionType {
@@ -65,15 +65,18 @@ data BookState = BookState {
     -- bookTensors :: M.Map TensorName TensorType,
     bookTensors :: [TensorType],
     bookFuncs :: [FunctionType],
-    bookCalcs :: [Calc]
+    bookCalcs :: M.Map String Calc
     -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
 emptyBook :: BookState
-emptyBook = BookState [] [] []
+emptyBook = BookState [] [] $ M.fromList []
 
 lookupTensor :: String -> BookState -> TensorType
 lookupTensor l bs = head $ filter (\t -> tensorName t == l) $ bookTensors bs
+
+lookupCalc :: String -> BookState -> Maybe Calc
+lookupCalc s bs = M.lookup s (bookCalcs bs)
 
 -----------------------------------------------------------------------
 -- Transformation
@@ -90,6 +93,7 @@ data Calc
     | Contract Int Int Calc
     | Number Rational
     | Tensor TensorName [Index]
+    | Variable String
     deriving Show
 
 data Index = Index {
@@ -107,6 +111,21 @@ c1 |*| c2 = Prod [c1, c2]
 
 (|+|) :: Calc -> Calc -> Calc
 c1 |+| c2 = Sum [c1, c2]
+
+tensorTypeFromCalc :: String -> Calc -> TensorType
+tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
+
+indexTypeFromCalc :: Calc -> [IndexType]
+indexTypeFromCalc (Tensor _ idx) = map indexToIndexType idx
+indexTypeFromCalc (Sum (first:_)) = indexTypeFromCalc first
+indexTypeFromCalc (Prod factors) = concat (map indexTypeFromCalc factors)
+-- Permuted indices must be of same type so can just pass through
+indexTypeFromCalc (Permute p c) = indexTypeFromCalc c
+indexTypeFromCalc (Contract i1 i2 c)
+    | i1 < i2 = deleteAt i1 $ deleteAt i2 (indexTypeFromCalc c)
+
+indexToIndexType :: Index -> IndexType
+indexToIndexType i = IndexType (reprDim $ indexRepr i) (reprGroup $ indexRepr i) "_"
 
 calcFromExpr :: Abs.Expr -> Reader BookState (Calc, [(String, Index)])
 calcFromExpr x = case x of
@@ -129,72 +148,81 @@ calcFromExpr x = case x of
     return (calc |*| Number (p % q), idx)
   Abs.Div _ _ -> undefined
   Abs.Tensor (Abs.Label l) absIdx -> do
+    maybeCalc <- asks (lookupCalc l)
     tensorType <- asks (lookupTensor l)
-    let indices = zip absIdx $ tensorIndices tensorType
-    let indices' = map (uncurry indexTypeToIndex) indices
-    let freeSlots = freeIndexPos x
-    let freeSlotsPos = map snd freeSlots
-    let freeSlotsLabels = map (indexLabel.fst) freeSlots
-    let freeIndices' = map (indices'!!) freeSlotsPos
-    let freeIndicesAndLabels = zip freeSlotsLabels freeIndices'
+    let absIndicesWithType = zip absIdx $ tensorIndices tensorType :: [(Abs.Index, IndexType)]
+    let indices = map (uncurry indexTypeToIndex) absIndicesWithType :: [Index]
+    -- Which of the indices are free?
+    let freeSlots = T.freeIndexPos x :: [(Abs.Index, Int)]
+    let freeSlotsPos = map snd freeSlots :: [Int]
+    let freeSlotsLabels = map (indexLabel.fst) freeSlots :: [String]
+    let freeIndices = map (indices!!) freeSlotsPos :: [Index]
+    let freeIndicesAndLabels = zip freeSlotsLabels freeIndices :: [(String, Index)]
     let sortedIdxAndLabels = sortBy (\(a, _) (b, _) -> compare a b) freeIndicesAndLabels
     let perm = inverse $ sortingPermutationAsc freeSlotsLabels
-    calc <- selfContractions x
-    return (Permute perm calc, sortedIdxAndLabels)
+    let contractions = selfContractedIndexPairs (zip absIdx indices)
+    let calc = case maybeCalc of
+            Just storedCalc -> storedCalc
+            Nothing -> (Tensor l indices)
+    let contractedCalc = contractNew contractions calc
+    return (Permute perm contractedCalc, sortedIdxAndLabels)
   Abs.Number p -> return (Number (fromInteger p), [])
   Abs.Fraction p q -> return (Number (p % q), [])
   Abs.Mul expr1 expr2 -> do
     (calc1, idx1) <- calcFromExpr expr1
     (calc2, idx2) <- calcFromExpr expr2
-    let pairs = contractedPairs expr1 expr2
-    let offset = length (freeIndexSlots expr1)
-    let c1 = map (snd.fst) pairs
-    let c2 = map (snd.snd) pairs
-    let c2' = map (\x -> x - offset) c2
+    let pairs = traceShowId $ contractedPairsNew idx1 idx2
+    let offset = length (T.freeIndexSlots expr1)
+    let c1 = map (\(_,_,i) -> i) $ map fst pairs
+    let c2 = map (\(_,_,i) -> i) $ map snd pairs
+    let c2' = map (\i -> i - offset) c2
     let f1 = foldr deleteAt idx1 c1
     let f2 = foldr deleteAt idx2 c2'
     let f = map fst $ f1 ++ f2
-    let perm = inverse $ sortingPermutationAsc f
-    let f' = permuteList perm (f1 ++ f2)
-    return (Permute perm $ contract pairs $ calc1 |*| calc2, f')
+    let perm = inverse $ sortingPermutationAsc (traceShowId f)
+    let f' = permuteList (inverse $ perm) (f1 ++ f2)
+    let res = (Permute perm $ contractNew pairs $ calc1 |*| calc2, f')
+    return $ res
 
   _ -> undefined
 
 -- Create nested contractions for a list of contraction pairs of slots
-contract :: [ContractPair] -> Calc -> Calc
-contract [] expr = expr
-contract (((_, i1), (_, i2)):rest) expr = Contract i1 i2 $ contract rest expr
+contractNew :: [ContractPairNew] -> Calc -> Calc
+contractNew [] expr = expr
+contractNew (((_, _, i1), (_, _, i2)):rest) expr = Contract i1 i2 $ contractNew rest expr
 
-type IndexSlot = (Abs.Index, Int)
-type ContractPair = (IndexSlot, IndexSlot)
+type IndexSlotNew = (String, Index, Int)
+type ContractPairNew = (IndexSlotNew, IndexSlotNew)
 
-labelEqual :: ContractPair -> Bool
-labelEqual ((l1, _),(l2, _)) = indexLabel l1 == indexLabel l2
+labelEqual :: ContractPairNew -> Bool
+labelEqual ((l1, _, _),(l2, _, _)) = l1 == l2
 
-contractedPairs:: Abs.Expr -> Abs.Expr -> [ContractPair]
-contractedPairs expr1 expr2 = nestedPairs
-    where -- Get intersecting pairs of labels
-          free1 = freeIndexSlots expr1
-          free2 = freeIndexSlots expr2
-          cartProd = [(i1, i2) | i1 <- free1, i2 <- free2]
-          intersection = filter labelEqual cartProd
-          -- Offset the right hand factor
+-- labelEqual :: ContractPair -> Bool
+-- labelEqual ((l1, _),(l2, _)) = indexLabel l1 == indexLabel l2
+
+contractedPairsNew:: [(String, Index)] -> [(String, Index)] -> [ContractPairNew]
+contractedPairsNew free1 free2 = nestedPairs
+    where -- Get indices with same label between factors
+          free1Pos = map (\((l, index), idx) -> (l, index, idx)) $ zip free1 [0..]
+          free2Pos = map (\((l, index), idx) -> (l, index, idx)) $ zip free2 [0..]
+          cartProd = [(i1, i2) | i1 <- free1Pos, i2 <- free2Pos]
+          intersection = filter (\((l1, _, _), (l2, _, _)) -> l1 == l2) cartProd
           (lh, rh) = (map fst intersection, map snd intersection)
-          orh = offsetIndices free1 rh
+          -- Offset the right hand factor
+          orh = [(l, index, i + length free1) | (l, index, i) <- rh]
           -- Generate contraction pairs
-          pairs = zip lh orh :: [(IndexSlot, IndexSlot)]
+          pairs = zip lh orh
           -- Nest contractions
-          nestedPairs = getNestedPairs pairs (length free1 + length free2)
-          -- [2,3][0,1]{0}{1}{2}{3}
-          -- [2,3]{2}{3}
-getNestedPairs :: [ContractPair] -> Int -> [ContractPair]
-getNestedPairs pairs n = newPairs
-    where slots = [0..n]
-          (_, newPairs) = foldr reduceNestedPair (slots, []) pairs
+          nestedPairs = getNestedPairsNew pairs (length free1 + length free2)
 
-reduceNestedPair :: ContractPair -> ([Int], [ContractPair]) -> ([Int], [ContractPair])
-reduceNestedPair ((index1, i1), (index2, i2)) (oldPos, newContractions)
-    | i1 < i2 = (newPos, ((index1, pos1), (index2, pos2)):newContractions)
+getNestedPairsNew :: [ContractPairNew] -> Int -> [ContractPairNew]
+getNestedPairsNew pairs n = newPairs
+    where slots = [0..n]
+          (_, newPairs) = foldr reduceNestedPairNew (slots, []) pairs
+
+reduceNestedPairNew :: ContractPairNew -> ([Int], [ContractPairNew]) -> ([Int], [ContractPairNew])
+reduceNestedPairNew ((l1, index1, i1), (l2, index2, i2)) (oldPos, newContractions)
+    | i1 < i2 = (newPos, ((l1, index1, pos1), (l2, index2, pos2)):newContractions)
      where pos1 = unsafeMaybe $ elemIndex i1 oldPos
            pos2 = unsafeMaybe $ elemIndex i2 oldPos
            (spos1, spos2) = case pos2 > pos1 of
@@ -207,26 +235,22 @@ unsafeMaybe :: Maybe a -> a
 unsafeMaybe (Just x) = x
 unsafeMaybe _ = undefined
 
-selfContractions :: Abs.Expr -> Reader BookState Calc
-selfContractions (Abs.Tensor (Abs.Label l) idxs) = do
-        tensorType <- asks (lookupTensor l)
-        let indices = zipWith indexTypeToIndex idxs (tensorIndices tensorType)
-        return $ contract (contractedIndexPairs idxs) (Tensor l indices)
-selfContractions _ = undefined
-
-contractedIndexPairs :: [Abs.Index] -> [ContractPair]
-contractedIndexPairs idxs = filter labelEqual distributedPairs
+selfContractedIndexPairs :: [(Abs.Index, Index)] -> [ContractPairNew]
+selfContractedIndexPairs idxs = nestedPairs
     where indexSlotPositions = zip idxs [0..length idxs]
+          indexFormat = map (\((absindex, index), i) -> (indexLabel absindex, index, i)) indexSlotPositions
           distributedPairs = [
                 (i1, i2) |
-                i1@(_,x) <- indexSlotPositions,
-                i2@(_,y) <- indexSlotPositions,
-                i1 /= i2 && x < y
+                i1@(_, _, x) <- indexFormat,
+                i2@(_, _, y) <- indexFormat,
+                x < y
            ]
+          intersection = filter labelEqual distributedPairs
+          nestedPairs = getNestedPairsNew intersection (length idxs)
 
 indexTypeToIndex:: Abs.Index -> IndexType -> Index
-indexTypeToIndex av IndexType{indexDim=d} = Index r v
-            where r = ReprType d
+indexTypeToIndex av IndexType{indexDim=d,indexGroup=g} = Index r v
+            where r = ReprType d g
                   v = calcVal av
                   calcVal (Abs.Upper _) = Up
                   calcVal (Abs.Lower _) = Down

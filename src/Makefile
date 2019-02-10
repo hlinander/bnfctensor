@@ -1,6 +1,9 @@
 .PHONY: all clean docker-ghci docker
 
-all: tensor
+all: tensor tensorkernel
+
+tensorkernel: Kernel.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
+	ghc --make $< -o tensorkernel
 
 tensor: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
 	ghc --make $< -o tensor

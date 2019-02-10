@@ -63,12 +63,13 @@ coercions SymExpr 1 ;
 -- Tensor expressions
 -----------------------------------------------------------------------
 
-Func. Expr  ::= Label "(" [Expr] ")" ;
-Add.  Expr1 ::= Expr1 "+" Expr2 ;
-Sub.  Expr1 ::= Expr1 "-" Expr2 ;
-Neg.  Expr2 ::= "-" Expr2 ;           -- shift/reduce conflict with Sub
-Mul.  Expr2 ::= Expr2 Expr3 ;
-Div.  Expr2 ::= Expr2 "/" Expr3 ;
+Subst. Expr  ::= Expr "|" Expr "->" Expr1 ;
+Func.  Expr  ::= Label "(" [Expr] ")" ;
+Add.   Expr1 ::= Expr1 "+" Expr2 ;
+Sub.   Expr1 ::= Expr1 "-" Expr2 ;
+Neg.   Expr2 ::= "-" Expr2 ;           -- shift/reduce conflict with Sub
+Mul.   Expr2 ::= Expr2 Expr3 ;
+Div.   Expr2 ::= Expr2 "/" Expr3 ;
 
 (:[]). [Expr] ::= Expr ;
 (:).   [Expr] ::= Expr "," [Expr] ;
