@@ -16,6 +16,7 @@ import Math.Combinat.Permutations
 import qualified Tensor as T
 import Util
 import Control.Monad.Reader
+import Control.Monad.Fix
 
 import Debug.Trace
 
@@ -35,7 +36,7 @@ instance Show IndexType where
 data GroupType = GroupType {
     groupName :: String,
     groupDims :: [Int]
-}
+} deriving Eq
 
 instance Show GroupType where
     showsPrec i g = showString (groupName g) . showList (groupDims g)
@@ -54,12 +55,12 @@ instance Show TensorType where
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
-} deriving Show
+} deriving (Show, Eq)
 
 data FunctionType = FunctionType {
     funcName :: String,
     funcArity :: Int
-} deriving Show
+} deriving (Show, Eq)
 
 data BookState = BookState {
     -- bookTensors :: M.Map TensorName TensorType,
@@ -94,14 +95,26 @@ data Calc
     | Number Rational
     | Tensor TensorName [Index]
     | Variable String
-    deriving Show
+    -- | Func String [Calc]
+    deriving (Show, Eq)
+
+-- data Function
+--     = Zero (BookState -> *)
+--     | Succ (* -> *) Function
+--
+-- evalF :: Function -> BookState -> a
+-- evalF (Succ f (Zero f')) bs = f $ f' bs
+-- evalF (Succ f fs) bs = f . evalF fs bs
+--
+-- instance Show Function where
+--     showsPrec _ _ = showChar ' '
 
 data Index = Index {
     indexRepr :: ReprType,
     indexValence :: ValenceType
-} deriving Show
+} deriving (Show, Eq)
 
-data ValenceType = Up | Down deriving Show
+data ValenceType = Up | Down deriving (Show, Eq)
 
 infixl 5 |*|
 infixl 4 |+|
@@ -116,8 +129,11 @@ tensorTypeFromCalc :: String -> Calc -> TensorType
 tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
 
 indexTypeFromCalc :: Calc -> [IndexType]
+indexTypeFromCalc (Tensor _ []) = []
 indexTypeFromCalc (Tensor _ idx) = map indexToIndexType idx
+indexTypeFromCalc (Sum []) = []
 indexTypeFromCalc (Sum (first:_)) = indexTypeFromCalc first
+indexTypeFromCalc (Prod []) = []
 indexTypeFromCalc (Prod factors) = concat (map indexTypeFromCalc factors)
 -- Permuted indices must be of same type so can just pass through
 indexTypeFromCalc (Permute p c) = indexTypeFromCalc c
@@ -171,7 +187,7 @@ calcFromExpr x = case x of
   Abs.Mul expr1 expr2 -> do
     (calc1, idx1) <- calcFromExpr expr1
     (calc2, idx2) <- calcFromExpr expr2
-    let pairs = traceShowId $ contractedPairsNew idx1 idx2
+    let pairs = contractedPairsNew idx1 idx2
     let offset = length (T.freeIndexSlots expr1)
     let c1 = map (\(_,_,i) -> i) $ map fst pairs
     let c2 = map (\(_,_,i) -> i) $ map snd pairs
@@ -179,12 +195,15 @@ calcFromExpr x = case x of
     let f1 = foldr deleteAt idx1 c1
     let f2 = foldr deleteAt idx2 c2'
     let f = map fst $ f1 ++ f2
-    let perm = inverse $ sortingPermutationAsc (traceShowId f)
+    let perm = inverse $ sortingPermutationAsc f
     let f' = permuteList (inverse $ perm) (f1 ++ f2)
     let res = (Permute perm $ contractNew pairs $ calc1 |*| calc2, f')
     return $ res
+  Abs.Func (Abs.Label "distribute") (expr:[]) -> do
+    (calc, idx) <- calcFromExpr expr
+    return $ (distribute calc, idx)
 
-  _ -> undefined
+  x -> (return $ (traceShow ("vinsten: " ++ show x) (Number 1), []))
 
 -- Create nested contractions for a list of contraction pairs of slots
 contractNew :: [ContractPairNew] -> Calc -> Calc
@@ -302,7 +321,7 @@ eval = undefined
 -- a*(b+c)*d*(e+f*(g+h)) -> a*b + a*c
 -- a*(b+c) -> a*b + a*c
 distribute :: Calc -> Calc
-distribute = flattenCalc . distribute'
+distribute = distribute'
 
 -- (a + b) T = +[*[a,T],  
 -- s := a + b
@@ -317,24 +336,38 @@ distribute = flattenCalc . distribute'
 -- cs := [a,b]
 -- -> +[*[a,+[c,d]], *[b, +[c,d]]]
 -- \x -> \x -> \x -> \x -> x 
+-- Permute (toPermutation []) (Prod [Permute (toPermutation []) (Tensor "Q" []),Sum [Permute (toPermutation []) (Tensor "Q" []),Permute (toPermutation []) (Tensor "Q" [])]])
+
 
 -- first order distribute
 distribute' :: Calc -> Calc
 distribute' c = case c of
     Prod (Sum cs:fs) -> Sum (map (\x -> distribute' $ Prod (x:fs)) cs)
     Prod [f, Sum cs] -> Sum (map (\x -> distribute' $ Prod (f:[x])) cs)
+    Prod [_] -> c
     Prod (f:fs) -> Prod [f, distribute' (Prod fs)]
     Sum cs -> Sum $ map distribute' cs
+    Permute p c -> Permute p (distribute' c)
+    Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
+
+--recurseCalc :: (Calc -> Calc) -> Calc -> Calc
+--recurseCalc f (Sum terms) = Sum (map f terms)
+--recurseCalc f (Prod factors) = Prod (map f factors)
+--recurseCalc f x = f x
 
 flattenCalc ::Calc -> Calc
 flattenCalc c = case c of
+    Prod [] -> Number 1
     Prod [Prod fs] -> Prod $ recurse fs
     Prod [f, Prod fs] -> Prod (f:recurse fs)
     Prod fs -> Prod $ recurse fs
+    Sum [] -> Number 0
     Sum [Sum ts] -> Sum $ recurse ts
     Sum [t, Sum ts] -> Sum (t:recurse ts)
     Sum ts -> Sum $ recurse ts
+    Permute p c -> Permute p (flattenCalc c)
+    Contract i1 i2 c -> Contract i1 i2 (flattenCalc c)
     _ -> c
     where recurse = map flattenCalc
 

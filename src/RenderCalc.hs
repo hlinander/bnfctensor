@@ -30,6 +30,8 @@ data Component
     | StartDown
     | EndUp
     | EndDown
+    | StartNumber
+    | EndNumber
 
 mathML :: Component -> String
 mathML StartOp      = "<mrow>\n"
@@ -50,6 +52,8 @@ mathML StartUp      = "<mi>"
 mathML StartDown    = "<mi>"
 mathML EndUp        = "</mi>"
 mathML EndDown      = "</mi>"
+mathML StartNumber  = "<mn>"
+mathML EndNumber    = "</mn>"
 
 console :: Component -> String
 console StartOp      = "("
@@ -70,6 +74,8 @@ console StartUp      = "^"
 console StartDown    = "."
 console EndUp      = ""
 console EndDown    = ""
+console StartNumber  = ""
+console EndNumber    = ""
 
 type FreeIndices = [String]
 type RenderState = FreeIndices
@@ -103,6 +109,7 @@ renderCalc' target x = case x of
         let mlterms = intercalate (target Plus) mlterms'
         let close = (target CloseParen) ++ (target EndOp)
         return $ open ++ mlterms ++ close
+    Prod (Number n:rest) -> (++) <$> renderCalc' target (Number n) <*> renderCalc' target (Prod rest)
     Prod factors -> do
         let open = (target StartOp)
         frees <- R.ask
@@ -122,21 +129,24 @@ renderCalc' target x = case x of
         frees <- R.ask
         let newFrees = insertAt i2 dummy $ insertAt i1 dummy frees
         R.local (const newFrees) (renderCalc' target t)
-    Contract i1 i2 t | i1 > i1 -> undefined
+    Contract i1 i2 _ | i1 > i2 -> undefined
     Number n ->
-        return $ (target StartFrac) ++ (show p) ++ (if q == 1 then "" else (target MidFrac) ++ (show q)) ++ (target EndFrac)
+        case q of
+            1 -> return $ target StartNumber ++ show p ++ target EndNumber
+            _ -> return $ target StartFrac ++ show p ++ target MidFrac ++ show q ++ target EndFrac
       where p = numerator n
             q = denominator n
     Permute p c -> do
         localFrees <- R.ask
         let newFrees = P.permuteList p localFrees
         R.local (const newFrees) $ renderCalc' target c
+    Tensor name [] -> return $ (target StartIdent) ++ name ++ (target EndIdent)
     Tensor name indices -> do
         localFrees <- R.ask
         let theIndices = zip localFrees indices
         let open = (target StartTensor)
         let nameString = (target StartIdent) ++ name ++ (target EndIdent)
-        let indicesString = concat $ map (renderIndex target) theIndices --concat (take (length indices) localFrees)
+        let indicesString = concatMap (renderIndex target) theIndices --concat (take (length indices) localFrees)
         let close = (target EndTensor)
         return $ open ++ nameString ++ indicesString ++ close
     _ -> undefined

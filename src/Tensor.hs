@@ -8,7 +8,7 @@ import Frontend.AbsTensor
 usedIndices :: Expr -> [Index]
 usedIndices x = case x of
     Tensor _ indices -> indices
-    Func label exprs -> undefined
+    Func label exprs -> concat (map usedIndices exprs) -- MEGA TODO ONLY WORKS WITH DISTRIBUTE
     Add expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
     Sub expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
     Neg expr -> usedIndices expr
@@ -25,7 +25,7 @@ freeIndices_ x s = case x of
     Tensor _ indices -> filter isFree indices
         where isFree index = not (indexLabelIn index s || occurences index indices > 1)
               occurences x list = length $ filter (valenceFreeEq x) list
-    Func label exprs -> undefined
+    Func label exprs -> []
     Add expr1 expr2 -> freeIndices_ expr1 s
     Sub expr1 expr2 -> freeIndices_ expr1 s
     Neg expr -> freeIndices_ expr s
@@ -48,7 +48,7 @@ freeIndexSlots_ x s = case x of
     Fraction integer1 integer2 -> []
     Add expr1 expr2 -> freeIndexSlots_ expr1 s
     Sub expr1 expr2 -> freeIndexSlots_ expr1 s
-    Func label exprs -> undefined
+    Func label exprs -> [] -- MEGA TODO
     Mul expr1 expr2 -> do
         let leftHand = freeIndexSlots_ expr1 (s ++ freeIndexSlots_ expr2 s)
         let rightHand = freeIndexSlots_ expr2 (s ++ freeIndexSlots_ expr1 s)
@@ -70,7 +70,7 @@ freeIndexPos_ x s = case x of
     Fraction integer1 integer2 -> []
     Add expr1 expr2 -> freeIndexPos_ expr1 s
     Sub expr1 expr2 -> freeIndexPos_ expr1 s
-    Func label exprs -> undefined
+    Func label exprs -> [] -- MEGA TODO
     Mul expr1 expr2 -> do
         let leftHand = freeIndexPos_ expr1 (s ++ freeIndexPos_ expr2 s)
         let rightHand = freeIndexPos_ expr2 (s ++ freeIndexPos_ expr1 s)

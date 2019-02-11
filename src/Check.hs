@@ -49,6 +49,7 @@ analyzeTensorDef lls def = mapM_ maybeAppend (map tensor labels)
             else tensorAppend l
 
 analyzeIndex :: TensorDef -> [IndexType]
+analyzeIndex (ScalarDef) = []
 analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = map indexType indices
     where group = GroupType gl $ numsToInts nums
           indexType (IndexGroup (Label il) idim) = IndexType (fromInteger idim) group il

@@ -21,6 +21,7 @@ StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr4] ")" "{" [Stmt] "}" ;
 -- Tensor type declaration
 -----------------------------------------------------------------------
 
+ScalarDef. TensorDef  ::= ;
 TensorDef. TensorDef  ::= [IndexDef] ":" TensorDef1 ;
 GroupDef.  TensorDef1 ::= Label "(" [NumList] ")" ;
 
@@ -64,7 +65,7 @@ coercions SymExpr 1 ;
 -----------------------------------------------------------------------
 
 Subst. Expr  ::= Expr "|" Expr "->" Expr1 ;
-Func.  Expr  ::= Label "(" [Expr] ")" ;
+Func.  Expr  ::= Label "!" "(" [Expr] ")" ;
 Add.   Expr1 ::= Expr1 "+" Expr2 ;
 Sub.   Expr1 ::= Expr1 "-" Expr2 ;
 Neg.   Expr2 ::= "-" Expr2 ;           -- shift/reduce conflict with Sub
@@ -93,8 +94,8 @@ coercions Expr 4 ;
 Upper. Index ::= "^" Label ;
 Lower. Index ::= "." Label ;
 
-(:[]). [Index] ::= Index;
-(:).   [Index] ::= Index [Index] ;
+[].   [Index] ::= ;
+(:).  [Index] ::= Index [Index] ;
 
 -----------------------------------------------------------------------
 -- Numeric literal
