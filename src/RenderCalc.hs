@@ -103,6 +103,7 @@ getFreesForFactors freeSlots frees = freesFactors
 
 sumPrec = 4
 prodPrec = 5
+opPrec = 6
 
 renderParen pred target x = if pred then (target OpenParen) ++ x ++ (target CloseParen) else x
 renderOp target x = (target StartOp) ++ x ++ (target EndOp)
@@ -124,7 +125,6 @@ renderCalc' prec target x = case x of
         frees <- R.ask
         let freeSlots = map numFreeSlots [f1, f2]
         let [free1, free2] = getFreesForFactors freeSlots frees
-        -- let factorsWithFrees = zip factors freesFactors
         rf1 <- R.local (const free1) $ renderCalc' newPrec target f1
         rf2 <- R.local (const free2) $ renderCalc' newPrec target f2
         let wrap = renderOp target . renderParen (prec > prodPrec) target
@@ -153,9 +153,21 @@ renderCalc' prec target x = case x of
         localFrees <- R.ask
         let theIndices = zip localFrees indices
         let open = (target StartTensor)
-        let indicesString = concatMap (renderIndex target) theIndices --concat (take (length indices) localFrees)
+        let indicesString = concatMap (renderIndex target) theIndices
         let close = (target EndTensor)
         return $ open ++ renderIdent target name ++ indicesString ++ close
+    Op name indices calc -> do
+        localFrees <- R.ask
+        let opPreIndices = take (length indices) localFrees
+        let newLocalFrees = drop (length indices) localFrees
+        let newPrec = max opPrec prec
+        calcString <- R.local (const newLocalFrees) $ renderCalc' newPrec target calc
+        let opIndices = zip opPreIndices indices
+        let open = (target StartTensor)
+        let nameString = (target StartIdent) ++ name ++ (target EndIdent)
+        let indicesString = concatMap (renderIndex target) opIndices
+        let close = (target EndTensor)
+        return $ open ++ nameString ++ indicesString ++ close ++ calcString
     _ -> undefined
 
 renderIndex :: (Component -> String) -> (String, Index) -> String
@@ -169,5 +181,5 @@ numFreeSlots x = case x of
     Contract _ _ expr -> numFreeSlots expr - 2
     Tensor _ idxs -> length idxs
     Permute _ t -> numFreeSlots t
+    Op _ idxs c -> (length idxs) + numFreeSlots c
     _ -> 0
-

@@ -52,6 +52,18 @@ instance Show TensorType where
         . showList (tensorIndices t)
         . showString " }"
 
+data OpType = OpType {
+    opName :: String,
+    opIndices :: [IndexType]
+}
+
+instance Show OpType where
+    showsPrec i t = showString (opName t)
+        . showString " { "
+        . showList (opIndices t)
+        . showString " }"
+
+
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
@@ -65,16 +77,20 @@ data FunctionType = FunctionType {
 data BookState = BookState {
     -- bookTensors :: M.Map TensorName TensorType,
     bookTensors :: [TensorType],
+    bookOps :: [OpType],
     bookFuncs :: [FunctionType],
     bookCalcs :: M.Map String Calc
     -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
 emptyBook :: BookState
-emptyBook = BookState [] [] $ M.fromList []
+emptyBook = BookState [] [] [] $ M.fromList []
 
 lookupTensor :: String -> BookState -> TensorType
 lookupTensor l bs = head $ filter (\t -> tensorName t == l) $ bookTensors bs
+
+lookupOp :: String -> BookState -> OpType
+lookupOp l bs = head $ filter (\t -> opName t == l) $ bookOps bs
 
 lookupCalc :: String -> BookState -> Maybe Calc
 lookupCalc s bs = M.lookup s (bookCalcs bs)
@@ -84,6 +100,7 @@ lookupCalc s bs = M.lookup s (bookCalcs bs)
 -----------------------------------------------------------------------
 
 type TensorName = String
+type OpName = String
 
 data Calc
     = Sum Calc Calc
@@ -94,7 +111,7 @@ data Calc
     | Contract Int Int Calc
     | Number Rational
     | Tensor TensorName [Index]
-    | Variable String
+    | Op OpName [Index] Calc
     -- | Func String [Calc]
     deriving (Show, Eq)
 
@@ -164,44 +181,76 @@ calcFromExpr x = case x of
   Abs.Tensor (Abs.Label l) absIdx -> do
     maybeCalc <- asks (lookupCalc l)
     tensorType <- asks (lookupTensor l)
-    let absIndicesWithType = zip absIdx $ tensorIndices tensorType :: [(Abs.Index, IndexType)]
-    let indices = map (uncurry indexTypeToIndex) absIndicesWithType :: [Index]
-    -- Which of the indices are free?
-    let freeSlots = T.freeIndexPos x :: [(Abs.Index, Int)]
-    let freeSlotsPos = map snd freeSlots :: [Int]
-    let freeSlotsLabels = map (indexLabel.fst) freeSlots :: [String]
-    let freeIndices = map (indices!!) freeSlotsPos :: [Index]
-    let freeIndicesAndLabels = zip freeSlotsLabels freeIndices :: [(String, Index)]
-    let sortedIdxAndLabels = sortBy (\(a, _) (b, _) -> compare a b) freeIndicesAndLabels
-    let perm = inverse $ sortingPermutationAsc freeSlotsLabels
-    let contractions = selfContractedIndexPairs (zip absIdx indices)
+    let indexTypes = tensorIndices tensorType
+    let freeSlots = T.freeIndexPos x
+    let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
     let calc = case maybeCalc of
             Just storedCalc -> storedCalc
             Nothing -> (Tensor l indices)
     let contractedCalc = contractNew contractions calc
     return (Permute perm contractedCalc, sortedIdxAndLabels)
+  Abs.Op (Abs.Label l) absIdx expr -> do
+    (calc, idx) <- calcFromExpr expr
+    opType <- asks (lookupOp l)
+    let calcAbsIndices = map labeledIndexToAbsIndex idx
+    let indexTypes = opIndices opType ++ indexTypeFromCalc calc
+    let allIndices = absIdx ++ calcAbsIndices
+    let freeSlots = T.freeIndicesWithPos allIndices []
+    let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject allIndices indexTypes freeSlots
+    let contractedCalc = contractNew contractions (Op l (take (length absIdx) indices) calc)
+    let permCalc = Permute perm contractedCalc
+    -- let (perm2, contractions2, sortedIdxOut) = processBinaryIndexed idx sortedIdxAndLabels (length freeSlots)
+    -- let contractedOut = contractNew contractions2 permCalc
+    -- let calcOut = Permute perm2 contractedOut
+    return (permCalc, sortedIdxAndLabels)
   Abs.Number p -> return (Number (fromInteger p), [])
   Abs.Fraction p q -> return (Number (p % q), [])
   Abs.Mul expr1 expr2 -> do
     (calc1, idx1) <- calcFromExpr expr1
     (calc2, idx2) <- calcFromExpr expr2
-    let pairs = contractedPairsNew idx1 idx2
     let offset = length (T.freeIndexSlots expr1)
-    let c1 = map (\(_,_,i) -> i) $ map fst pairs
-    let c2 = map (\(_,_,i) -> i) $ map snd pairs
-    let c2' = map (\i -> i - offset) c2
-    let f1 = foldr deleteAt idx1 c1
-    let f2 = foldr deleteAt idx2 c2'
-    let f = map fst $ f1 ++ f2
-    let perm = inverse $ sortingPermutationAsc f
-    let f' = permuteList (inverse $ perm) (f1 ++ f2)
-    let res = (Permute perm $ contractNew pairs $ calc1 |*| calc2, f')
+    let (perm, contracted, f') = processBinaryIndexed idx1 idx2 offset
+    let res = (Permute perm $ contractNew contracted $ calc1 |*| calc2, f')
     return $ res
   Abs.Func (Abs.Label "distribute") (expr:[]) -> do
     (calc, idx) <- calcFromExpr expr
     return $ (distribute calc, idx)
 
   x -> (return $ (traceShow ("vinsten: " ++ show x) (Number 1), []))
+
+labeledIndexToAbsIndex (l, Index{indexValence=Up}) = Abs.Upper (Abs.Label l)
+labeledIndexToAbsIndex (l, Index{indexValence=Down}) = Abs.Lower (Abs.Label l)
+
+type LabeledIndex = (String, Index)
+type AbsIndexPos = (Abs.Index, Int)
+type IndexedData = ([Index], Permutation, [ContractPairNew], [LabeledIndex])
+
+processIndexedObject :: [Abs.Index] -> [IndexType] -> [AbsIndexPos] -> IndexedData
+processIndexedObject absIdx indexTypes freeSlots = (indices, perm, contractions, sortedIdxAndLabels)
+    where absIndicesWithType = zip absIdx $ indexTypes :: [(Abs.Index, IndexType)]
+          indices = map (uncurry indexTypeToIndex) absIndicesWithType :: [Index]
+          -- Which of the indices are free?
+          freeSlotsPos = map snd freeSlots :: [Int]
+          freeSlotsLabels = map (indexLabel.fst) freeSlots :: [String]
+          freeIndices = map (indices!!) freeSlotsPos :: [Index]
+          freeIndicesAndLabels = zip freeSlotsLabels freeIndices :: [(String, Index)]
+          sortedIdxAndLabels = sortBy (\(a, _) (b, _) -> compare a b) freeIndicesAndLabels
+          perm = inverse $ sortingPermutationAsc freeSlotsLabels
+          contractions = selfContractedIndexPairs (zip absIdx indices)
+
+type BinaryIndexedData = (Permutation, [ContractPairNew], [LabeledIndex])
+
+processBinaryIndexed :: [LabeledIndex] -> [LabeledIndex] -> Int -> BinaryIndexedData
+processBinaryIndexed idx1 idx2 offset = (perm, contracted, f')
+    where contracted = contractedPairsNew idx1 idx2
+          c1 = map (\(_,_,i) -> i) $ map fst contracted
+          c2 = map (\(_,_,i) -> i) $ map snd contracted
+          c2' = map (\i -> i - offset) c2
+          f1 = foldr deleteAt idx1 c1
+          f2 = foldr deleteAt idx2 c2'
+          f = map fst $ f1 ++ f2
+          perm = inverse $ sortingPermutationAsc f
+          f' = permuteList (inverse $ perm) (f1 ++ f2)
 
 -- Create nested contractions for a list of contraction pairs of slots
 contractNew :: [ContractPairNew] -> Calc -> Calc

@@ -8,11 +8,12 @@ import Frontend.AbsTensor
 usedIndices :: Expr -> [Index]
 usedIndices x = case x of
     Tensor _ indices -> indices
+    Op _ indices expr -> indices ++ (usedIndices expr)
     Func label exprs -> concat (map usedIndices exprs) -- MEGA TODO ONLY WORKS WITH DISTRIBUTE
     Add expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
     Sub expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
     Neg expr -> usedIndices expr
-    Mul expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2) 
+    Mul expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
     Div expr1 expr2 -> usedIndices expr1
     Number integer -> []
     Fraction integer1 integer2 -> []
@@ -25,6 +26,10 @@ freeIndices_ x s = case x of
     Tensor _ indices -> filter isFree indices
         where isFree index = not (indexLabelIn index s || occurences index indices > 1)
               occurences x list = length $ filter (valenceFreeEq x) list
+    Op _ indices expr -> filter isFree allIndices
+        where isFree index = not (indexLabelIn index s || occurences index allIndices > 1)
+              occurences x list = length $ filter (valenceFreeEq x) list
+              allIndices = indices ++ freeIndices_ expr s
     Func label exprs -> []
     Add expr1 expr2 -> freeIndices_ expr1 s
     Sub expr1 expr2 -> freeIndices_ expr1 s
@@ -61,9 +66,7 @@ freeIndexPos x = freeIndexPos_ x []
 freeIndexPos_ :: Expr -> [(Index, Int)] -> [(Index, Int)]
 freeIndexPos_ x s = case x of
         -- in s, in indices or free
-    Tensor _ indices -> filter isFree (zip indices [0..])
-        where isFree (index, _) = not (indexLabelIn index (map fst s) || occurences index indices > 1)
-              occurences x list = length $ filter (valenceFreeEq x) list
+    Tensor _ indices -> freeIndicesWithPos indices s
     Neg expr -> freeIndexPos_ expr s
     Div expr1 expr2 -> freeIndexPos_ expr1 s
     Number integer -> []
@@ -76,6 +79,11 @@ freeIndexPos_ x s = case x of
         let rightHand = freeIndexPos_ expr2 (s ++ freeIndexPos_ expr1 s)
         leftHand ++ offsetIndices leftHand rightHand
         -- where offset lh rh = [ (s, i + length lh) | (s,i) <- rh ]
+
+freeIndicesWithPos :: [Index] -> [(Index, Int)] -> [(Index, Int)]
+freeIndicesWithPos indices used = filter isFree (zip indices [0..])
+        where isFree (index, _) = not (indexLabelIn index (map fst used) || occurences index indices > 1)
+              occurences x list = length $ filter (valenceFreeEq x) list
 
 offsetIndices :: [(Index, Int)] -> [(Index, Int)] -> [(Index, Int)]
 offsetIndices lh rh = [ (s, i + length lh) | (s,i) <- rh ]

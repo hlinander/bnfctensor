@@ -62,6 +62,7 @@ evalStatement bs stmt  = case stmt of
     StmtVoid expr -> evalExpr "" bs expr
     StmtFuncDef name exprs stmts -> undefined
     StmtTensorDef ts ds -> (putSuccess $ concat $ L.map show ts) >> return bs
+    StmtOpDef os ds -> (putSuccess $ concat $ L.map show os) >> return bs
 
 attemptCompletion :: BookState -> String -> Int -> Int -> IO (Maybe (String, [String]))
 attemptCompletion bs s _ _ = undefined

@@ -6,3 +6,5 @@ TensorMap in BookState
 
 Functions!
 
+Fix operator @ precedence (T.a + Q.a@S^b.b)
+Fix free indices type checker (same expr as above)

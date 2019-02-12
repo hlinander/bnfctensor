@@ -15,6 +15,7 @@ import Core (
     IndexType(..),
     FunctionType(..),
     TensorType(..),
+    OpType(..),
     lookupTensor,
     emptyBook
  )
@@ -34,6 +35,7 @@ analyzeBook' (Derivation ss) = mapM analyzeStmt ss >>= return . Derivation
 analyzeStmt :: Stmt -> StateT BookState Err Stmt
 analyzeStmt stmt = case stmt of
     StmtTensorDef labels tensordef -> analyzeTensorDef labels tensordef >> return stmt
+    StmtOpDef labels opdef -> analyzeOpDef labels opdef >> return stmt
     StmtFuncDef ident exprs stmts -> funcAppend (FunctionType (labelFromIdent ident) (length exprs)) >> return stmt
     StmtAssign label expr -> runReaderT (analyzeExpr expr) ([] :: [Index]) >> return stmt
     StmtVoid expr -> runReaderT (analyzeExpr expr) ([] :: [Index]) >> return stmt
@@ -47,6 +49,15 @@ analyzeTensorDef lls def = mapM_ maybeAppend (map tensor labels)
             defined <- tensorDefined l
             if defined then fail $ "Tensor already defined: " -- ++ show $ lookupTensor l
             else tensorAppend l
+
+analyzeOpDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
+analyzeOpDef lls def = mapM_ maybeAppend (map op labels)
+    where labels = map labelsFromList lls
+          op label = OpType label (analyzeIndices def)
+          maybeAppend l = do
+            defined <- opDefined l
+            if defined then fail $ "Op already defined: " -- ++ show $ lookupTensor l
+            else opAppend l
 
 analyzeIndex :: TensorDef -> [IndexType]
 analyzeIndex (ScalarDef) = []
@@ -82,6 +93,9 @@ analyzeExpr expr = do
             _ <- local (union $ usedIndices e1) $ analyzeExpr e2
             return expr
         Tensor label indices -> checkTensorDecl label indices >> return expr
+        Op label indices e -> do
+            _ <- local (union $ indices) $ analyzeExpr e
+            checkOpDecl label indices >> return expr
         _ -> return expr
         where checkPlus e1 e2 = let free1 = freeIndices e1
                                     free2 = freeIndices e2
@@ -110,10 +124,24 @@ checkTensorDecl (Label s) indices = do
         ((TensorType name defIndices) : []) -> fail $ "Tensor " ++ s ++ " used with wrong rank"
         _ -> fail $ "Tensor " ++ s ++ " declared multiple times"
 
+checkOpDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
+checkOpDecl (Label s) indices = do
+    opType <- findDeclOp s
+    case opType of
+        [] -> fail $ "Op " ++ s ++ " not declared"
+        ((OpType name defIndices) : []) | length defIndices == length indices -> return ()
+        ((OpType name defIndices) : []) -> fail $ "Op " ++ s ++ " used with wrong rank"
+        _ -> fail $ "Op " ++ s ++ " declared multiple times"
+
 findDeclTensor :: String -> ReaderT [Index] (StateT BookState Err) [TensorType]
 findDeclTensor s = do
     bookState <- get
     return $ filter (\t -> tensorName t == s) (bookTensors bookState)
+
+findDeclOp :: String -> ReaderT [Index] (StateT BookState Err) [OpType]
+findDeclOp s = do
+    bookState <- get
+    return $ filter (\t -> opName t == s) (bookOps bookState)
 
 labelsFromList :: LabelList -> String
 labelsFromList (LabelList (Label s)) = s
@@ -133,6 +161,9 @@ numListToInteger (NumList n) = n
 tensorAppend :: Monad m => TensorType -> StateT BookState m ()
 tensorAppend tensor = modify (\t -> t { bookTensors = tensor : bookTensors t })
 
+opAppend :: Monad m => OpType -> StateT BookState m ()
+opAppend op = modify (\t -> t { bookOps = op : bookOps t })
+
 funcAppend :: Monad m => FunctionType -> StateT BookState m ()
 funcAppend f = modify (\t -> t { bookFuncs = f : bookFuncs t })
 
@@ -140,3 +171,8 @@ tensorDefined :: Monad m => TensorType -> StateT BookState m Bool
 tensorDefined l = do
     bs <- get
     return $ any (\t -> tensorName t == tensorName l) $ bookTensors bs
+
+opDefined :: Monad m => OpType -> StateT BookState m Bool
+opDefined l = do
+    bs <- get
+    return $ any (\t -> opName t == opName l) $ bookOps bs

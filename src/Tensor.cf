@@ -10,8 +10,9 @@ StmtVoid.        Stmt ::= Expr ";" ;
 StmtAssign.      Stmt ::= "var" Label "=" Expr ";" ;
 StmtSymmetry.    Stmt ::= Sym ;
 StmtTensorDef.   Stmt ::= "tensor" [LabelList] "{" [TensorDef] "}" ;
+StmtOpDef.       Stmt ::= "op" [LabelList] "{" [TensorDef] "}" ;
 StmtRowDoc.      Stmt ::= DocString ;
-StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr5] ")" "{" [Stmt] "}" ;
+StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr6] ")" "{" [Stmt] "}" ;
 -- FuncTypeDef. Stmt ::= 
 
 (:[]). [Stmt] ::= Stmt ;
@@ -70,7 +71,11 @@ Sub.   Expr1 ::= Expr1 "-" Expr2 ;
 Neg.   Expr2 ::= "-" Expr2 ;           -- shift/reduce conflict with Sub
 Mul.   Expr2 ::= Expr2 Expr3 ;
 Div.   Expr2 ::= Expr2 "/" Expr3 ;
-Func.  Expr4  ::= Label "!" "(" [Expr] ")" ;
+Op.    Expr4 ::= Label [Index] "~" "(" Expr ")" ;
+Func.  Expr5 ::= Label "!" "(" [Expr] ")" ;
+
+-- D@func!(vinst)
+-- D A A @vinst
 
 (:[]). [Expr] ::= Expr ;
 (:).   [Expr] ::= Expr "," [Expr] ;
@@ -80,12 +85,12 @@ Func.  Expr4  ::= Label "!" "(" [Expr] ")" ;
 -----------------------------------------------------------------------
 
 -- Indexed. Expr3 ::= Expr3 [Index]
-Tensor.  Expr5 ::= Label [Index] ;
+Tensor.  Expr6 ::= Label [Index] ;
 
-(:[]). [Expr5] ::= Expr ;
-(:).   [Expr5] ::= Expr "," [Expr5] ;
+(:[]). [Expr6] ::= Expr6 ;
+(:).   [Expr6] ::= Expr6 "," [Expr6] ;
 
-coercions Expr 5 ;
+coercions Expr 6 ;
 
 -----------------------------------------------------------------------
 -- Index variables
@@ -101,8 +106,8 @@ Lower. Index ::= "." Label ;
 -- Numeric literal
 -----------------------------------------------------------------------
 
-Number. Expr5 ::= Integer ;
-Fraction. Expr5 ::= Integer "/" Integer ;
+Number. Expr6 ::= Integer ;
+Fraction. Expr6 ::= Integer "/" Integer ;
 
 NumList. NumList ::= Integer ;
 (:).   [NumList] ::= NumList "," [NumList] ;
