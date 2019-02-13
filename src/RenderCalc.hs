@@ -103,22 +103,22 @@ getFreesForFactors freeSlots frees = freesFactors
 
 renderCalc' :: (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
 renderCalc' target x = case x of
-    Sum terms -> do
+    Sum s1 s2 -> do
         let open = (target StartOp)  ++ (target OpenParen)
-        mlterms' <- mapM (renderCalc' target) terms
-        let mlterms = intercalate (target Plus) mlterms'
+        rs1 <- (renderCalc' target) s1
+        rs2 <- (renderCalc' target) s2
         let close = (target CloseParen) ++ (target EndOp)
-        return $ open ++ mlterms ++ close
-    Prod (Number n:rest) -> (++) <$> renderCalc' target (Number n) <*> renderCalc' target (Prod rest)
-    Prod factors -> do
+        return $ open ++ rs1 ++ (target Plus) ++ rs2 ++ close
+    Prod (Number n) f2 -> (++) <$> renderCalc' target (Number n) <*> renderCalc' target f2
+    Prod f1 f2 -> do
         let open = (target StartOp)
         frees <- R.ask
-        let freeSlots = map numFreeSlots factors
-        let freesFactors = getFreesForFactors freeSlots frees
-        let factorsWithFrees = zip factors freesFactors
-        factors' <- mapM (\(f, localFrees) -> R.local (const localFrees)
-            $ renderCalc' target f) factorsWithFrees
-        let mlfactors = intercalate (target Times) factors'
+        let freeSlots = map numFreeSlots [f1, f2]
+        let [free1, free2] = getFreesForFactors freeSlots frees
+        -- let factorsWithFrees = zip factors freesFactors
+        rf1 <- R.local (const free1) $ renderCalc' target f1
+        rf2 <- R.local (const free2) $ renderCalc' target f2
+        let mlfactors = rf1 ++ (target Times) ++ rf2
         let close = (target EndOp)
         return $ open ++ mlfactors ++ close
     Contract i1 i2 t | i1 < i2 -> do
@@ -159,8 +159,8 @@ renderIndex target (label, Index{indexValence=Down}) = mlname ++ (target IndexPH
 
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of
-    Prod factors -> sum (map numFreeSlots factors)
-    Sum terms -> numFreeSlots $ head terms
+    Prod f1 f2 -> numFreeSlots f1 + numFreeSlots f2
+    Sum s1 s2 -> numFreeSlots s1
     Contract _ _ expr -> numFreeSlots expr - 2
     Tensor _ idxs -> length idxs
     Permute _ t -> numFreeSlots t

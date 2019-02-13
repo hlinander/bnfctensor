@@ -86,8 +86,8 @@ lookupCalc s bs = M.lookup s (bookCalcs bs)
 type TensorName = String
 
 data Calc
-    = Sum [Calc]
-    | Prod [Calc]
+    = Sum Calc Calc
+    | Prod Calc Calc
     | Transform String [Calc]
     | Power Int Calc
     | Permute Permutation Calc
@@ -120,10 +120,10 @@ infixl 5 |*|
 infixl 4 |+|
 
 (|*|) :: Calc -> Calc -> Calc
-c1 |*| c2 = Prod [c1, c2]
+c1 |*| c2 = Prod c1 c2
 
 (|+|) :: Calc -> Calc -> Calc
-c1 |+| c2 = Sum [c1, c2]
+c1 |+| c2 = Sum c1 c2
 
 tensorTypeFromCalc :: String -> Calc -> TensorType
 tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
@@ -131,10 +131,8 @@ tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
 indexTypeFromCalc :: Calc -> [IndexType]
 indexTypeFromCalc (Tensor _ []) = []
 indexTypeFromCalc (Tensor _ idx) = map indexToIndexType idx
-indexTypeFromCalc (Sum []) = []
-indexTypeFromCalc (Sum (first:_)) = indexTypeFromCalc first
-indexTypeFromCalc (Prod []) = []
-indexTypeFromCalc (Prod factors) = concat (map indexTypeFromCalc factors)
+indexTypeFromCalc (Sum first _) = indexTypeFromCalc first
+indexTypeFromCalc (Prod f1 f2) = indexTypeFromCalc f1 ++ indexTypeFromCalc f2
 -- Permuted indices must be of same type so can just pass through
 indexTypeFromCalc (Permute p c) = indexTypeFromCalc c
 indexTypeFromCalc (Contract i1 i2 c)
@@ -342,11 +340,11 @@ distribute = distribute'
 -- first order distribute
 distribute' :: Calc -> Calc
 distribute' c = case c of
-    Prod (Sum cs:fs) -> Sum (map (\x -> distribute' $ Prod (x:fs)) cs)
-    Prod [f, Sum cs] -> Sum (map (\x -> distribute' $ Prod (f:[x])) cs)
-    Prod [_] -> c
-    Prod (f:fs) -> Prod [f, distribute' (Prod fs)]
-    Sum cs -> Sum $ map distribute' cs
+    Prod (Sum s1 s2) fs -> Sum (Prod s1 fs) (Prod s2 fs)
+    Prod fs (Sum s1 s2) -> Sum (Prod fs s1) (Prod fs s2)
+    Prod f1 f2 -> Prod (distribute' f1) (distribute' f2)
+    Sum s1 s2 -> Sum (distribute' s1) (distribute' s2)
+    Permute p (Sum s1 s2) -> Sum (Permute p s1) (Permute p s2)
     Permute p c -> Permute p (distribute' c)
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
@@ -355,21 +353,6 @@ distribute' c = case c of
 --recurseCalc f (Sum terms) = Sum (map f terms)
 --recurseCalc f (Prod factors) = Prod (map f factors)
 --recurseCalc f x = f x
-
-flattenCalc ::Calc -> Calc
-flattenCalc c = case c of
-    Prod [] -> Number 1
-    Prod [Prod fs] -> Prod $ recurse fs
-    Prod [f, Prod fs] -> Prod (f:recurse fs)
-    Prod fs -> Prod $ recurse fs
-    Sum [] -> Number 0
-    Sum [Sum ts] -> Sum $ recurse ts
-    Sum [t, Sum ts] -> Sum (t:recurse ts)
-    Sum ts -> Sum $ recurse ts
-    Permute p c -> Permute p (flattenCalc c)
-    Contract i1 i2 c -> Contract i1 i2 (flattenCalc c)
-    _ -> c
-    where recurse = map flattenCalc
 
 -- a + a + a -> 3*a
 collectTerms :: Abs.Expr -> Abs.Expr
