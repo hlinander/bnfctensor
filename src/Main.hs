@@ -34,8 +34,9 @@ import Core (
 putColor :: Color -> String -> IO ()
 putColor color msg = do
   setSGR [SetColor Foreground Vivid color]
-  putStrLn msg
+  putStr msg
   setSGR [Reset]
+  putStrLn ""
 
 putErr :: String -> IO ()
 putErr msg = putColor Red msg
