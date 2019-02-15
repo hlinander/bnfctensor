@@ -56,8 +56,8 @@ mathML StartNumber  = "<mn>"
 mathML EndNumber    = "</mn>"
 
 console :: Component -> String
-console StartOp      = "("
-console EndOp        = ")"
+console StartOp      = ""
+console EndOp        = ""
 console Plus         = " + "
 console Times        = " ⊗ "
 console OpenParen    = "("
@@ -94,33 +94,41 @@ renderConsole :: Calc -> String
 renderConsole = flip renderCalc console
 
 renderCalc :: Calc -> (Component -> String) -> String
-renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' f x) emptyRenderEnv) dummyLabels
+renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' 0 f x) emptyRenderEnv) dummyLabels
 
 getFreesForFactors :: [Int] -> [String] -> [[String]]
 getFreesForFactors freeSlots frees = freesFactors
     where reduce (ff, remaining) nFree = (ff ++ [take nFree remaining], drop nFree remaining)
           (freesFactors, _) = foldl reduce ([], frees) freeSlots
 
-renderCalc' :: (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
-renderCalc' target x = case x of
+sumPrec = 4
+prodPrec = 5
+
+renderParen pred target x = if pred then (target OpenParen) ++ x ++ (target CloseParen) else x
+renderOp target x = (target StartOp) ++ x ++ (target EndOp)
+renderIdent target x = (target StartIdent) ++ x ++ (target EndIdent)
+renderUp target x = (target StartUp) ++ x ++ (target EndUp)
+renderDown target x = (target StartDown) ++ x ++ (target EndDown)
+
+renderCalc' :: Int -> (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
+renderCalc' prec target x = case x of
     Sum s1 s2 -> do
-        let open = (target StartOp)  ++ (target OpenParen)
-        rs1 <- (renderCalc' target) s1
-        rs2 <- (renderCalc' target) s2
-        let close = (target CloseParen) ++ (target EndOp)
-        return $ open ++ rs1 ++ (target Plus) ++ rs2 ++ close
-    Prod (Number n) f2 -> (++) <$> renderCalc' target (Number n) <*> renderCalc' target f2
+        let newPrec = if sumPrec > prec then sumPrec else prec
+        rs1 <- (renderCalc' newPrec target) s1
+        rs2 <- (renderCalc' newPrec target) s2
+        let wrap = renderOp target . renderParen (prec > sumPrec) target
+        return $ wrap (rs1 ++ (target Plus) ++ rs2)
+    Prod (Number n) f2 -> (++) <$> renderCalc' prec target (Number n) <*> renderCalc' prec target f2
     Prod f1 f2 -> do
-        let open = (target StartOp)
+        let newPrec = if prodPrec > prec then prodPrec else prec
         frees <- R.ask
         let freeSlots = map numFreeSlots [f1, f2]
         let [free1, free2] = getFreesForFactors freeSlots frees
         -- let factorsWithFrees = zip factors freesFactors
-        rf1 <- R.local (const free1) $ renderCalc' target f1
-        rf2 <- R.local (const free2) $ renderCalc' target f2
-        let mlfactors = rf1 ++ (target Times) ++ rf2
-        let close = (target EndOp)
-        return $ open ++ mlfactors ++ close
+        rf1 <- R.local (const free1) $ renderCalc' newPrec target f1
+        rf2 <- R.local (const free2) $ renderCalc' newPrec target f2
+        let wrap = renderOp target . renderParen (prec > prodPrec) target
+        return $ wrap (rf1 ++ (target Times) ++ rf2)
     Contract i1 i2 t | i1 < i2 -> do
         oldState <- S.get
         let newState = drop 1 oldState
@@ -128,7 +136,7 @@ renderCalc' target x = case x of
         S.put newState
         frees <- R.ask
         let newFrees = insertAt i2 dummy $ insertAt i1 dummy frees
-        R.local (const newFrees) (renderCalc' target t)
+        R.local (const newFrees) (renderCalc' prec target t)
     Contract i1 i2 _ | i1 > i2 -> undefined
     Number n ->
         case q of
@@ -139,23 +147,20 @@ renderCalc' target x = case x of
     Permute p c -> do
         localFrees <- R.ask
         let newFrees = P.permuteList p localFrees
-        R.local (const newFrees) $ renderCalc' target c
-    Tensor name [] -> return $ (target StartIdent) ++ name ++ (target EndIdent)
+        R.local (const newFrees) $ renderCalc' prec target c
+    Tensor name [] -> return $ renderIdent target name
     Tensor name indices -> do
         localFrees <- R.ask
         let theIndices = zip localFrees indices
         let open = (target StartTensor)
-        let nameString = (target StartIdent) ++ name ++ (target EndIdent)
         let indicesString = concatMap (renderIndex target) theIndices --concat (take (length indices) localFrees)
         let close = (target EndTensor)
-        return $ open ++ nameString ++ indicesString ++ close
+        return $ open ++ renderIdent target name ++ indicesString ++ close
     _ -> undefined
 
 renderIndex :: (Component -> String) -> (String, Index) -> String
-renderIndex target (label, Index{indexValence=Up}) = (target IndexPH) ++ mlname
-  where mlname = (target StartIdent) ++ (target StartUp) ++ label ++ (target EndUp) ++ (target EndIdent)
-renderIndex target (label, Index{indexValence=Down}) = mlname ++ (target IndexPH)
-  where mlname = (target StartIdent) ++ (target StartDown) ++ label ++ (target EndDown) ++ (target EndIdent)
+renderIndex target (label, Index{indexValence=Up}) = (target IndexPH) ++ (renderIdent target $ renderUp target label)
+renderIndex target (label, Index{indexValence=Down}) = (renderIdent target $ renderDown target label) ++ (target IndexPH)
 
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of
@@ -165,3 +170,4 @@ numFreeSlots x = case x of
     Tensor _ idxs -> length idxs
     Permute _ t -> numFreeSlots t
     _ -> 0
+
