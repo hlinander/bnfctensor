@@ -52,7 +52,7 @@ type ReplState = (BookState, [String])
 evalExpr :: String -> BookState -> Expr -> IO BookState
 evalExpr var bs expr = do
     let (calc, idx) = runReader (calcFromExpr expr) bs
-    putStrLn $ renderCalc calc console
+    putStrLn $ renderCalc calc console -- TODO maybe add ?? "\x2234 " ++
     -- putStrLn $ show idx
     return $ bs -- appendCalc bs var calc -- TODO FIXME PLS DOES NOT APPEND ANYMORE
 

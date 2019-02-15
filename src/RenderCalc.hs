@@ -84,8 +84,7 @@ freeLabels :: [String]
 freeLabels = map (:[]) ['a'..'z']
 
 dummyLabels :: [String]
-dummyLabels = map (:[]) ['A'..'Z']
--- freeLabels = map (\x -> "d" ++ show x) ([0..] :: [Integer])
+dummyLabels = map (:['\x0332']) ['a'..'z']
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
@@ -114,19 +113,17 @@ renderDown target x = (target StartDown) ++ x ++ (target EndDown)
 renderCalc' :: Int -> (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
 renderCalc' prec target x = case x of
     Sum s1 s2 -> do
-        let newPrec = if sumPrec > prec then sumPrec else prec
-        rs1 <- (renderCalc' newPrec target) s1
-        rs2 <- (renderCalc' newPrec target) s2
+        rs1 <- (renderCalc' sumPrec target) s1
+        rs2 <- (renderCalc' sumPrec target) s2
         let wrap = renderOp target . renderParen (prec > sumPrec) target
         return $ wrap (rs1 ++ (target Plus) ++ rs2)
     Prod (Number n) f2 -> (++) <$> renderCalc' prec target (Number n) <*> renderCalc' prec target f2
     Prod f1 f2 -> do
-        let newPrec = if prodPrec > prec then prodPrec else prec
         frees <- R.ask
         let freeSlots = map numFreeSlots [f1, f2]
         let [free1, free2] = getFreesForFactors freeSlots frees
-        rf1 <- R.local (const free1) $ renderCalc' newPrec target f1
-        rf2 <- R.local (const free2) $ renderCalc' newPrec target f2
+        rf1 <- R.local (const free1) $ renderCalc' prodPrec target f1
+        rf2 <- R.local (const free2) $ renderCalc' prodPrec target f2
         let wrap = renderOp target . renderParen (prec > prodPrec) target
         return $ wrap (rf1 ++ (target Times) ++ rf2)
     Contract i1 i2 t | i1 < i2 -> do
@@ -160,12 +157,11 @@ renderCalc' prec target x = case x of
         localFrees <- R.ask
         let opPreIndices = take (length indices) localFrees
         let newLocalFrees = drop (length indices) localFrees
-        let newPrec = max opPrec prec
-        calcString <- R.local (const newLocalFrees) $ renderCalc' newPrec target calc
-        let opIndices = zip opPreIndices indices
+        calcString <- R.local (const newLocalFrees) $ renderCalc' opPrec target calc
+        let opIndices_ = zip opPreIndices indices
         let open = (target StartTensor)
         let nameString = (target StartIdent) ++ name ++ (target EndIdent)
-        let indicesString = concatMap (renderIndex target) opIndices
+        let indicesString = concatMap (renderIndex target) opIndices_
         let close = (target EndTensor)
         return $ open ++ nameString ++ indicesString ++ close ++ calcString
     _ -> undefined
