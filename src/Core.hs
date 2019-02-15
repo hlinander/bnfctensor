@@ -16,7 +16,6 @@ import Math.Combinat.Permutations
 import qualified Tensor as T
 import Util
 import Control.Monad.Reader
-import Control.Monad.Fix
 
 import Debug.Trace
 
@@ -62,7 +61,6 @@ instance Show OpType where
         . showString " { "
         . showList (opIndices t)
         . showString " }"
-
 
 data ReprType = ReprType {
     reprDim :: Int,
@@ -112,19 +110,7 @@ data Calc
     | Number Rational
     | Tensor TensorName [Index]
     | Op OpName [Index] Calc
-    -- | Func String [Calc]
     deriving (Show, Eq)
-
--- data Function
---     = Zero (BookState -> *)
---     | Succ (* -> *) Function
---
--- evalF :: Function -> BookState -> a
--- evalF (Succ f (Zero f')) bs = f $ f' bs
--- evalF (Succ f fs) bs = f . evalF fs bs
---
--- instance Show Function where
---     showsPrec _ _ = showChar ' '
 
 data Index = Index {
     indexRepr :: ReprType,
@@ -146,6 +132,7 @@ tensorTypeFromCalc :: String -> Calc -> TensorType
 tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
 
 indexTypeFromCalc :: Calc -> [IndexType]
+indexTypeFromCalc (Number _) = []
 indexTypeFromCalc (Tensor _ []) = []
 indexTypeFromCalc (Tensor _ idx) = map indexToIndexType idx
 indexTypeFromCalc (Sum first _) = indexTypeFromCalc first
@@ -154,6 +141,7 @@ indexTypeFromCalc (Prod f1 f2) = indexTypeFromCalc f1 ++ indexTypeFromCalc f2
 indexTypeFromCalc (Permute p c) = indexTypeFromCalc c
 indexTypeFromCalc (Contract i1 i2 c)
     | i1 < i2 = deleteAt i1 $ deleteAt i2 (indexTypeFromCalc c)
+indexTypeFromCalc (Op n idx c) = (map indexToIndexType idx) ++ indexTypeFromCalc c
 
 indexToIndexType :: Index -> IndexType
 indexToIndexType i = IndexType (reprDim $ indexRepr i) (reprGroup $ indexRepr i) "_"
@@ -199,9 +187,6 @@ calcFromExpr x = case x of
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject allIndices indexTypes freeSlots
     let contractedCalc = contractNew contractions (Op l (take (length absIdx) indices) calc)
     let permCalc = Permute perm contractedCalc
-    -- let (perm2, contractions2, sortedIdxOut) = processBinaryIndexed idx sortedIdxAndLabels (length freeSlots)
-    -- let contractedOut = contractNew contractions2 permCalc
-    -- let calcOut = Permute perm2 contractedOut
     return (permCalc, sortedIdxAndLabels)
   Abs.Number p -> return (Number (fromInteger p), [])
   Abs.Fraction p q -> return (Number (p % q), [])
@@ -212,9 +197,9 @@ calcFromExpr x = case x of
     let (perm, contracted, f') = processBinaryIndexed idx1 idx2 offset
     let res = (Permute perm $ contractNew contracted $ calc1 |*| calc2, f')
     return $ res
-  Abs.Func (Abs.Label "distribute") (expr:[]) -> do
+  Abs.Func (Abs.Label name) (expr:[]) -> do
     (calc, idx) <- calcFromExpr expr
-    return $ (distribute calc, idx)
+    return $ (execute name calc, idx)
 
   x -> (return $ (traceShow ("vinsten: " ++ show x) (Number 1), []))
 
@@ -328,63 +313,33 @@ indexLabel (Abs.Lower (Abs.Label lbl)) = lbl
 data Transformation
     = Rewrite { rewriteMatch :: (->) Calc Bool, rewriteWith :: Calc }
 
--- a(b+c) -> ab ac
--- distribute = Distr (:*) (:+)
--- collectTerms = Reduce (:+)
--- leibnitz = Distr (:+) (:*)
--- Rewrite (\c -> )
--- matchDist (Times )
-
-
 compose :: Transformation
 compose = undefined
-
 
 -- data TensorMonad = undefined
 execute :: String -> Calc -> Calc
 execute "distribute" = distribute
+execute "leibnitz" = leibnitz
+execute "simpop" = simpOp
+execute "simpn" = simpN
+execute "simpnp" = simpN'
+execute "show" = showCalc
 
--- execute func calc = func calc
---     where
---     func = undefined
---     tensorFunctions = [
---         ("distribute", distribute)
---      ]
+fixPoint :: (Calc -> Calc) -> Calc -> Calc
+fixPoint f c
+    | c' == c = c
+    | otherwise = fixPoint f c'
+    where c' = f c
 
-
+showCalc :: Calc -> Calc
+showCalc c = traceShowId c
 
 -----------------------------------------------------------------------
 -- Basic algebraic convenience
 -----------------------------------------------------------------------
 
--- eval :: Monad m => m Calc -> BookState -> Book
-eval = undefined
-
- -- Book
- -- let yo = T^...
- -- let dyo = distribute(yo)
- -- let dyo2 = canonicalize(dyo)
-
--- a*(b+c)*d*(e+f*(g+h)) -> a*b + a*c
--- a*(b+c) -> a*b + a*c
 distribute :: Calc -> Calc
-distribute = distribute'
-
--- (a + b) T = +[*[a,T],  
--- s := a + b
--- cs := T
--- 
--- (a + b)(c + d)(e + f)(g + h)(i + j)
--- gren1
--- s := (a+b)
--- cs := [c, d]
--- gren2
--- s := c+d
--- cs := [a,b]
--- -> +[*[a,+[c,d]], *[b, +[c,d]]]
--- \x -> \x -> \x -> \x -> x 
--- Permute (toPermutation []) (Prod [Permute (toPermutation []) (Tensor "Q" []),Sum [Permute (toPermutation []) (Tensor "Q" []),Permute (toPermutation []) (Tensor "Q" [])]])
-
+distribute = fixPoint distribute'
 
 -- first order distribute
 distribute' :: Calc -> Calc
@@ -398,10 +353,38 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
---recurseCalc :: (Calc -> Calc) -> Calc -> Calc
---recurseCalc f (Sum terms) = Sum (map f terms)
---recurseCalc f (Prod factors) = Prod (map f factors)
---recurseCalc f x = f x
+simpOp :: Calc -> Calc
+simpOp = fixPoint simpOp'
+
+simpOp' :: Calc -> Calc
+simpOp' (Op n idx (Permute p c)) = Permute (concatPermutations (identity (length idx)) p) (Op n idx c)
+simpOp' (Op n idx (Contract i1 i2 c)) = Contract (i1 + length idx) (i2 + length idx) (Op n idx c)
+simpOp' (Sum s1 s2) = Sum (simpOp s1) (simpOp s2)
+simpOp' (Prod s1 s2) = Prod (simpOp s1) (simpOp s2)
+simpOp' (Contract i1 i2 c) = Contract i1 i2 (simpOp c)
+simpOp' (Permute p c) = Permute p (simpOp c)
+simpOp' c = c
+
+simpN :: Calc -> Calc
+simpN = fixPoint simpN'
+
+simpN' :: Calc -> Calc
+simpN' (Prod (Number n) (Number m)) = Number (n*m)
+simpN' (Permute p (Number n)) = Number n
+simpN' (Prod f1 (Permute p (Prod (Number n) f2))) = Prod (Number n) (Prod f1 (Permute p f2))
+simpN' (Prod (Permute p (Prod (Number n) f1)) f2) = Prod (Number n) (Prod (Permute p f1) f2)
+simpN' (Prod f1 (Number n)) = Prod (Number n) (simpN' f1)
+simpN' (Prod (Number n1) (Prod (Number n2) f2)) = Prod (Number (n1*n2)) (simpN' f2)
+simpN' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (simpN' (Prod f1 f2))
+simpN' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (simpN' (Prod f1 f2))
+simpN' (Prod f1 f2) = Prod (simpN' f1) (simpN' f2)
+simpN' (Sum (Number n) (Number m)) = Number (n+m)
+simpN' (Sum s1 (Number n)) = Sum (Number n) (simpN' s1)
+simpN' (Sum s1 s2) = Sum (simpN' s1) (simpN' s2)
+simpN' (Permute p c) = Permute p (simpN' c)
+simpN' (Contract i1 i2 c) = Contract i1 i2 (simpN' c)
+simpN' (Op n idx c) = Op n idx (simpN' c)
+simpN' x = x
 
 -- a + a + a -> 3*a
 collectTerms :: Abs.Expr -> Abs.Expr
@@ -415,7 +398,7 @@ collectFactors = undefined
 substitute :: Abs.Expr -> Abs.Expr -> Abs.Expr -> Abs.Expr
 substitute x m s = undefined
 
--- a*b -> a*b + b*a 
+-- a*b -> a*b + b*a
 symmetrize :: Abs.Expr -> [IndexType] -> Abs.Expr
 symmetrize = undefined
 
@@ -434,7 +417,16 @@ sortTerms = undefined
 
 integrateByParts = undefined
 differentiate = undefined
-leibnitz = undefined
+leibnitz :: Calc -> Calc
+leibnitz = fixPoint leibnitz'
+
+leibnitz' :: Calc -> Calc
+leibnitz' (Op l idx (Prod f1 f2)) = Prod (Op l idx f1) f2 |+| Prod f1 (Op l idx f2)
+leibnitz' (Op l idx c) = Op l idx (leibnitz c)
+leibnitz' (Sum s1 s2) = Sum (leibnitz s1) (leibnitz s2)
+leibnitz' (Permute p c) = Permute p (leibnitz c)
+leibnitz' (Contract i1 i2 c) = Contract i1 i2 (leibnitz c)
+leibnitz' c = c
 
 -----------------------------------------------------------------------
 -- Magic sauce

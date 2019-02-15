@@ -65,6 +65,7 @@ evalStatement bs stmt  = case stmt of
     StmtVoid expr -> evalExpr bs expr
     StmtFuncDef name exprs stmts -> undefined
     StmtTensorDef ts ds -> return (bs, concat $ map show ts)
+    StmtOpDef os ds -> return (bs, concat $ map show os)
 
 handleStmts :: BookState -> [Stmt] -> IO (BookState, String)
 handleStmts bs [] = return (bs, "")

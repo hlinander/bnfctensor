@@ -54,7 +54,7 @@ evalExpr var bs expr = do
     let (calc, idx) = runReader (calcFromExpr expr) bs
     putStrLn $ renderCalc calc console
     -- putStrLn $ show idx
-    return $ appendCalc bs var calc -- TODO FIXME PLS DOES NOT APPEND ANYMORE
+    return $ bs -- appendCalc bs var calc -- TODO FIXME PLS DOES NOT APPEND ANYMORE
 
 evalStatement :: BookState -> Stmt -> IO BookState
 evalStatement bs stmt  = case stmt of
@@ -98,7 +98,7 @@ replRL bs = do
           ":show all groups <name>" -> undefined
           ":load" -> do
             bs' <- loadBook "book"
-            showTensors bs'
+            -- showTensors bs'
             replRL bs'
           stmt -> repl' bs stmt >>= replRL
 

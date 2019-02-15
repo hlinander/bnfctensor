@@ -8,6 +8,7 @@ import Control.Monad
 import Control.Monad.State
 import Control.Monad.Reader
 import Data.List
+import qualified Data.Map as M
 
 import Core (
     BookState(..),
@@ -16,8 +17,10 @@ import Core (
     FunctionType(..),
     TensorType(..),
     OpType(..),
-    lookupTensor,
-    emptyBook
+    Calc,
+    calcFromExpr,
+    emptyBook,
+    tensorTypeFromCalc
  )
 
 import Tensor ( freeIndices,
@@ -30,33 +33,38 @@ analyzeBookWithState :: BookState -> Book -> Err (Book, BookState)
 analyzeBookWithState = flip (runStateT . analyzeBook')
 
 analyzeBook' :: Book -> StateT BookState Err Book
-analyzeBook' (Derivation ss) = mapM analyzeStmt ss >>= return . Derivation
+analyzeBook' (Derivation ss) = Derivation <$> mapM analyzeStmt ss
 
 analyzeStmt :: Stmt -> StateT BookState Err Stmt
 analyzeStmt stmt = case stmt of
     StmtTensorDef labels tensordef -> analyzeTensorDef labels tensordef >> return stmt
     StmtOpDef labels opdef -> analyzeOpDef labels opdef >> return stmt
-    StmtFuncDef ident exprs stmts -> funcAppend (FunctionType (labelFromIdent ident) (length exprs)) >> return stmt
-    StmtAssign label expr -> runReaderT (analyzeExpr expr) ([] :: [Index]) >> return stmt
+    StmtFuncDef ident exprs _ -> funcAppend (FunctionType (labelFromIdent ident) (length exprs)) >> return stmt
+    StmtAssign (Label l) expr -> do
+        runReaderT (analyzeExpr expr) ([] :: [Index])
+        bs <- get
+        let (calc, idx) = runReader (calcFromExpr expr) bs
+        calcAppend l calc
+        return stmt
     StmtVoid expr -> runReaderT (analyzeExpr expr) ([] :: [Index]) >> return stmt
     _ -> return stmt
 
 analyzeTensorDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
-analyzeTensorDef lls def = mapM_ maybeAppend (map tensor labels)
+analyzeTensorDef lls def = mapM_ (maybeAppend . tensor) labels
     where labels = map labelsFromList lls
           tensor label = TensorType label (analyzeIndices def)
           maybeAppend l = do
             defined <- tensorDefined l
-            if defined then fail $ "Tensor already defined: " -- ++ show $ lookupTensor l
+            if defined then fail "Tensor already defined: " -- ++ show $ lookupTensor l
             else tensorAppend l
 
 analyzeOpDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
-analyzeOpDef lls def = mapM_ maybeAppend (map op labels)
+analyzeOpDef lls def = mapM_ (maybeAppend . op) labels
     where labels = map labelsFromList lls
           op label = OpType label (analyzeIndices def)
           maybeAppend l = do
             defined <- opDefined l
-            if defined then fail $ "Op already defined: " -- ++ show $ lookupTensor l
+            if defined then fail "Op already defined: " -- ++ show $ lookupTensor l
             else opAppend l
 
 analyzeIndex :: TensorDef -> [IndexType]
@@ -66,14 +74,14 @@ analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = map indexType indi
           indexType (IndexGroup (Label il) idim) = IndexType (fromInteger idim) group il
 
 analyzeIndices :: [TensorDef] -> [IndexType]
-analyzeIndices defs = concatMap analyzeIndex defs
+analyzeIndices = concatMap analyzeIndex
 
 analyzeExpr :: Expr -> ReaderT [Index] (StateT BookState Err) Expr
 analyzeExpr expr = do
     currentIndices <- ask
     let indices = usedIndices expr
     let overlap = (intersect currentIndices indices)
-    when (not $ nub indices == indices) $ fail $ "Index label collision in [" ++ printTree expr ++ "]\n"
+    unless (nub indices == indices) $ fail $ "Index label collision in [" ++ printTree expr ++ "]\n"
     do
         let exprMsg  = "Index label collisions in [" ++ printTree expr ++ "]\n"
         let indexMsg = "for indices " ++ printTree overlap ++ "\n"
@@ -120,8 +128,8 @@ checkTensorDecl (Label s) indices = do
     tensorType <- findDeclTensor s
     case tensorType of
         [] -> fail $ "Tensor " ++ s ++ " not declared"
-        ((TensorType name defIndices) : []) | length defIndices == length indices -> return ()
-        ((TensorType name defIndices) : []) -> fail $ "Tensor " ++ s ++ " used with wrong rank"
+        ((TensorType _ defIndices) : []) | length defIndices == length indices -> return ()
+        ((TensorType _ _) : []) -> fail $ "Tensor " ++ s ++ " used with wrong rank"
         _ -> fail $ "Tensor " ++ s ++ " declared multiple times"
 
 checkOpDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
@@ -129,8 +137,8 @@ checkOpDecl (Label s) indices = do
     opType <- findDeclOp s
     case opType of
         [] -> fail $ "Op " ++ s ++ " not declared"
-        ((OpType name defIndices) : []) | length defIndices == length indices -> return ()
-        ((OpType name defIndices) : []) -> fail $ "Op " ++ s ++ " used with wrong rank"
+        ((OpType _ defIndices) : []) | length defIndices == length indices -> return ()
+        ((OpType _ _) : []) -> fail $ "Op " ++ s ++ " used with wrong rank"
         _ -> fail $ "Op " ++ s ++ " declared multiple times"
 
 findDeclTensor :: String -> ReaderT [Index] (StateT BookState Err) [TensorType]
@@ -157,6 +165,12 @@ numsToInts ns = map (fromInteger . numListToInteger) ns
 
 numListToInteger :: NumList -> Integer
 numListToInteger (NumList n) = n
+
+calcAppend :: Monad m => String -> Calc -> StateT BookState m ()
+calcAppend s c = modify(\t -> t {
+    bookCalcs = M.insert s c $ bookCalcs t,
+    bookTensors = (tensorTypeFromCalc s c) : (bookTensors t)
+})
 
 tensorAppend :: Monad m => TensorType -> StateT BookState m ()
 tensorAppend tensor = modify (\t -> t { bookTensors = tensor : bookTensors t })
