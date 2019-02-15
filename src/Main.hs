@@ -17,6 +17,7 @@ import Data.Typeable
 import Data.Maybe
 import Data.List as L
 import Data.Map as M
+import Debug.Trace
 
 import Control.Monad.State
 import Control.Monad.Reader
@@ -26,6 +27,8 @@ import Core (
     BookState(..),
     Calc,
     TensorType(..),
+    FunctionType(..),
+    OpType(..),
     calcFromExpr,
     tensorTypeFromCalc,
     emptyBook
@@ -64,8 +67,30 @@ evalStatement bs stmt  = case stmt of
     StmtTensorDef ts ds -> (putSuccess $ concat $ L.map show ts) >> return bs
     StmtOpDef os ds -> (putSuccess $ concat $ L.map show os) >> return bs
 
+bookstateCompletion :: BookState -> [String]
+bookstateCompletion bs = tensors ++ funcs ++ ops
+    where tensors = L.map tensorName $ bookTensors bs
+          funcs = L.map funcName $ bookFuncs bs
+          ops = L.map opName $ bookOps bs
+
 attemptCompletion :: BookState -> String -> Int -> Int -> IO (Maybe (String, [String]))
-attemptCompletion bs s _ _ = undefined
+attemptCompletion bs s _ _ = do
+    setAttemptedCompletionOver True
+    return $
+        let word = s
+            candidates = L.filter (isPrefixOf word) (bookstateCompletion bs)
+            longest = commonPrefixAll candidates
+        in if length candidates > 0 then Just (longest, candidates) else Nothing
+
+commonPrefix :: (Eq e) => [e] -> [e] -> [e]
+commonPrefix _ [] = []
+commonPrefix [] _ = []
+commonPrefix (x:xs) (y:ys)
+  | x == y    = x : commonPrefix xs ys
+  | otherwise = []
+
+commonPrefixAll :: (Eq e) => [[e]] -> [e]
+commonPrefixAll = L.foldl1 commonPrefix
 
 showTensor :: TensorType -> IO ()
 showTensor t = putStrLn $ tensorName t ++ " [" ++ (intercalate ", " (L.map show $ tensorIndices t)) ++ "]"

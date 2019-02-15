@@ -320,9 +320,9 @@ compose = undefined
 execute :: String -> Calc -> Calc
 execute "distribute" = distribute
 execute "leibnitz" = leibnitz
-execute "simpop" = simpOp
-execute "simpn" = simpN
-execute "simpnp" = simpN'
+execute "simpop" = simplifyOp
+execute "simpn" = simplifyN
+execute "simpnp" = simplifyN'
 execute "show" = showCalc
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -353,38 +353,38 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
-simpOp :: Calc -> Calc
-simpOp = fixPoint simpOp'
+simplifyOp :: Calc -> Calc
+simplifyOp = fixPoint simplifyOp'
 
-simpOp' :: Calc -> Calc
-simpOp' (Op n idx (Permute p c)) = Permute (concatPermutations (identity (length idx)) p) (Op n idx c)
-simpOp' (Op n idx (Contract i1 i2 c)) = Contract (i1 + length idx) (i2 + length idx) (Op n idx c)
-simpOp' (Sum s1 s2) = Sum (simpOp s1) (simpOp s2)
-simpOp' (Prod s1 s2) = Prod (simpOp s1) (simpOp s2)
-simpOp' (Contract i1 i2 c) = Contract i1 i2 (simpOp c)
-simpOp' (Permute p c) = Permute p (simpOp c)
-simpOp' c = c
+simplifyOp' :: Calc -> Calc
+simplifyOp' (Op n idx (Permute p c)) = Permute (concatPermutations (identity (length idx)) p) (Op n idx c)
+simplifyOp' (Op n idx (Contract i1 i2 c)) = Contract (i1 + length idx) (i2 + length idx) (Op n idx c)
+simplifyOp' (Sum s1 s2) = Sum (simplifyOp s1) (simplifyOp s2)
+simplifyOp' (Prod s1 s2) = Prod (simplifyOp s1) (simplifyOp s2)
+simplifyOp' (Contract i1 i2 c) = Contract i1 i2 (simplifyOp c)
+simplifyOp' (Permute p c) = Permute p (simplifyOp c)
+simplifyOp' c = c
 
-simpN :: Calc -> Calc
-simpN = fixPoint simpN'
+simplifyN :: Calc -> Calc
+simplifyN = fixPoint simplifyN'
 
-simpN' :: Calc -> Calc
-simpN' (Prod (Number n) (Number m)) = Number (n*m)
-simpN' (Permute p (Number n)) = Number n
-simpN' (Prod f1 (Permute p (Prod (Number n) f2))) = Prod (Number n) (Prod f1 (Permute p f2))
-simpN' (Prod (Permute p (Prod (Number n) f1)) f2) = Prod (Number n) (Prod (Permute p f1) f2)
-simpN' (Prod f1 (Number n)) = Prod (Number n) (simpN' f1)
-simpN' (Prod (Number n1) (Prod (Number n2) f2)) = Prod (Number (n1*n2)) (simpN' f2)
-simpN' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (simpN' (Prod f1 f2))
-simpN' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (simpN' (Prod f1 f2))
-simpN' (Prod f1 f2) = Prod (simpN' f1) (simpN' f2)
-simpN' (Sum (Number n) (Number m)) = Number (n+m)
-simpN' (Sum s1 (Number n)) = Sum (Number n) (simpN' s1)
-simpN' (Sum s1 s2) = Sum (simpN' s1) (simpN' s2)
-simpN' (Permute p c) = Permute p (simpN' c)
-simpN' (Contract i1 i2 c) = Contract i1 i2 (simpN' c)
-simpN' (Op n idx c) = Op n idx (simpN' c)
-simpN' x = x
+simplifyN' :: Calc -> Calc
+simplifyN' (Prod (Number n) (Number m)) = Number (n*m)
+simplifyN' (Permute p (Number n)) = Number n
+simplifyN' (Prod f1 (Permute p (Prod (Number n) f2))) = Prod (Number n) (Prod f1 (Permute p f2))
+simplifyN' (Prod (Permute p (Prod (Number n) f1)) f2) = Prod (Number n) (Prod (Permute p f1) f2)
+simplifyN' (Prod f1 (Number n)) = Prod (Number n) (simplifyN' f1)
+simplifyN' (Prod (Number n1) (Prod (Number n2) f2)) = Prod (Number (n1*n2)) (simplifyN' f2)
+simplifyN' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (simplifyN' (Prod f1 f2))
+simplifyN' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (simplifyN' (Prod f1 f2))
+simplifyN' (Prod f1 f2) = Prod (simplifyN' f1) (simplifyN' f2)
+simplifyN' (Sum (Number n) (Number m)) = Number (n+m)
+simplifyN' (Sum s1 (Number n)) = Sum (Number n) (simplifyN' s1)
+simplifyN' (Sum s1 s2) = Sum (simplifyN' s1) (simplifyN' s2)
+simplifyN' (Permute p c) = Permute p (simplifyN' c)
+simplifyN' (Contract i1 i2 c) = Contract i1 i2 (simplifyN' c)
+simplifyN' (Op n idx c) = Op n idx (simplifyN' c)
+simplifyN' x = x
 
 -- a + a + a -> 3*a
 collectTerms :: Abs.Expr -> Abs.Expr

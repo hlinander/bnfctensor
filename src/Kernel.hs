@@ -7,6 +7,8 @@ import System.Environment (getArgs)
 import Control.Concurrent
 import Control.Monad.Reader
 
+import Data.List
+
 import qualified Data.Map as M
 
 import IHaskell.IPython.EasyKernel (easyKernel, installKernelspec, KernelConfig(..))
@@ -87,13 +89,43 @@ runKernel mbs input _ _ = case parse $ T.unpack input of
                 return (render, IHaskell.IPython.Types.Ok, show ast ++ "\n" ++ show bs'')
     E.Bad parseErr -> return (parseErr, IHaskell.IPython.Types.Err, "")
 
+-- "he->"
+-- [herde]
+-- [herde]n
+-- [herde]vinst
+
+bookstateCompletion :: BookState -> [String]
+bookstateCompletion bs = tensors ++ funcs ++ ops
+    where tensors = map tensorName $ bookTensors bs
+          funcs = map funcName $ bookFuncs bs
+          ops = map opName $ bookOps bs
+
+
+languageCompletion :: MVar BookState -> T.Text -> Int -> IO (T.Text, [T.Text])
+languageCompletion mbs code pos = do
+    bs <- takeMVar mbs
+    putMVar mbs bs
+    return $
+        let (before, _) = T.splitAt pos code
+            word = last $ T.words $ T.map replace before
+            candidates = filter (isPrefixOf $ T.unpack word) (bookstateCompletion bs)
+        in (word, map T.pack candidates)
+        -- in (T.pack (drop (length (T.unpack word)) longest), map T.pack candidates)
+
+  where
+    replace :: Char -> Char
+    replace '(' = ' '
+    replace ')' = ' '
+    replace ',' = ' '
+    replace x = x
+
 simpleConfig :: MVar BookState -> KernelConfig IO String String
 simpleConfig mbs = KernelConfig
     { kernelLanguageInfo = languageConfig
     , writeKernelspec = const $ return languageKernelspec
     , displayOutput = displayString
     , displayResult = displayString
-    -- , completion = languageCompletion
+    , completion = languageCompletion mbs
     -- , inspectInfo = languageInspect
     , run = runKernel mbs
     , debug = False
