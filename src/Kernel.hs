@@ -89,11 +89,6 @@ runKernel mbs input _ _ = case parse $ T.unpack input of
                 return (render, IHaskell.IPython.Types.Ok, show ast ++ "\n" ++ show bs'')
     E.Bad parseErr -> return (parseErr, IHaskell.IPython.Types.Err, "")
 
--- "he->"
--- [herde]
--- [herde]n
--- [herde]vinst
-
 bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
     where tensors = map tensorName $ bookTensors bs
@@ -110,7 +105,6 @@ languageCompletion mbs code pos = do
             word = last $ T.words $ T.map replace before
             candidates = filter (isPrefixOf $ T.unpack word) (bookstateCompletion bs)
         in (word, map T.pack candidates)
-        -- in (T.pack (drop (length (T.unpack word)) longest), map T.pack candidates)
 
   where
     replace :: Char -> Char

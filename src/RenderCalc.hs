@@ -153,6 +153,9 @@ renderCalc' prec target x = case x of
         let indicesString = concatMap (renderIndex target) theIndices
         let close = (target EndTensor)
         return $ open ++ renderIdent target name ++ indicesString ++ close
+    Op name [] calc -> do
+        calcString <- renderCalc' opPrec target calc
+        return $ renderIdent target name ++ calcString
     Op name indices calc -> do
         localFrees <- R.ask
         let opPreIndices = take (length indices) localFrees

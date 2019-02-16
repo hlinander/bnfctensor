@@ -324,6 +324,7 @@ execute "simpop" = simplifyOp
 execute "simpn" = simplifyN
 execute "simpnp" = simplifyN'
 execute "show" = showCalc
+execute _ = id
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
 fixPoint f c
