@@ -138,13 +138,13 @@ type TensorName = String
 type OpName = String
 
 data Calc
-    = Sum Calc Calc
+    = Number Rational
+    | Sum Calc Calc
     | Prod Calc Calc
     | Transform String [Calc]
     | Power Int Calc
     | Permute Permutation Calc
     | Contract Int Int Calc
-    | Number Rational
     | Tensor TensorName [Index]
     | Op OpName [Index] Calc
     deriving (Show, Eq, Ord)
@@ -393,8 +393,9 @@ execute :: String -> Calc -> Calc
 execute "distribute" = distribute
 execute "leibnitz" = leibnitz
 execute "simpop" = simplifyOp
-execute "simpn" = simplifyWin
+execute "simpf" = simplifyFactors
 execute "simpnp" = simplifyN'
+execute "simp" = simplify
 execute "show" = showCalc
 execute "sort" = sortCalc
 execute _ = id
@@ -477,6 +478,7 @@ simplifyN' x = x
 -- Prod i*j t
 -- i * (j * (k * (l * t))) <==> t * (i * ((k * j) * l))
 --
+simplify = simplifyPermutations . simplifyTerms . simplifyFactors . sortCalc
 
 sortCalc :: Calc -> Calc
 sortCalc = transform f
@@ -491,18 +493,28 @@ sortCalc = transform f
 simplifyFactors :: Calc -> Calc
 simplifyFactors = transform simplifyFactors'
 
---simplify = simplifyN . simplifyOp
+simplifyTerms :: Calc -> Calc
+simplifyTerms = transform simplifyTerms'
+
+simplifyPermutations :: Calc -> Calc
+simplifyPermutations = transform simplifyPermutations'
 
 simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
+simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
+simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
 simplifyFactors' x = x
 
 simplifyTerms' :: Calc -> Calc
 simplifyTerms' (Sum (Number n) (Number m)) = Number (n+m)
+simplifyTerms' (Sum (Number m) (Sum (Number n) f)) = Sum (Number (n+m)) f
+simplifyTerms' (Sum (Sum (Number n) f1) f2) = Sum (Number n) (Sum f1 f2)
+simplifyTerms' x = x
 
-simplifyWin = undefined
-
--- simplify = transform simplifyFactors' . simplifyTerms'
+simplifyPermutations' :: Calc -> Calc
+simplifyPermutations' (Permute p (Prod (Number n) f)) = Prod (Number n) (Permute p f)
+simplifyPermutations' (Permute p (Sum t1 t2)) = Sum (Permute p t1) (Permute p t2)
+simplifyPermutations' x = x
 
 -- a + a + a -> 3*a
 collectTerms :: Abs.Expr -> Abs.Expr
@@ -549,9 +561,6 @@ leibnitz' c = c
 -----------------------------------------------------------------------
 -- Magic sauce
 -----------------------------------------------------------------------
-
-simplify :: Abs.Expr -> Abs.Expr
-simplify = undefined
 
 decompose :: Abs.Expr -> Abs.Expr
 decompose = undefined
