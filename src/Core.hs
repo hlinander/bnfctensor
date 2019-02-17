@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveDataTypeable #-}
 module Core where
 
 -----------------------------------------------------------------------
@@ -9,41 +10,45 @@ import qualified Frontend.AbsTensor as Abs (
     Index(..),
     Label(..)
  )
-import Data.Ratio
-import qualified Data.Map as M
-import Data.List
-import Math.Combinat.Permutations
-import qualified Tensor as T
-import Util
+
 import Control.Monad.Reader
+import Control.Monad.Except
+
+import Data.Bifunctor
+import Data.Maybe
+import Data.List
+import Data.Ratio
+
+import Data.Generics.Uniplate.Direct
+import Math.Combinat.Permutations
+import Util
+
+import qualified Data.Map as M
+import qualified Tensor as T
+
+-- import Control.Lens.Plated
+-- import Data.Data.Lens
+-- import Data.Data
 
 import Debug.Trace
 
-data IndexType = IndexType {
-    indexDim :: Int,
-    indexGroup :: GroupType,
-    indexName :: String
-}
-
-instance Show IndexType where
-    showsPrec i idx = showString (indexName idx)
-        . (showParen True
-        $ shows (indexDim idx))
-        . showString ": "
-        . shows (indexGroup idx)
+type IndexType = ReprType
 
 data GroupType = GroupType {
     groupName :: String,
     groupDims :: [Int]
-} deriving Eq
+} deriving (Eq, Ord)
 
 instance Show GroupType where
     showsPrec i g = showString (groupName g) . showList (groupDims g)
 
+createRepr :: GroupType -> Int -> ReprType
+createRepr = flip ReprType
+
 data TensorType = TensorType {
     tensorName :: String,
     tensorIndices :: [IndexType]
-}
+} deriving Eq
 
 instance Show TensorType where
     showsPrec i t = showString (tensorName t)
@@ -65,7 +70,23 @@ instance Show OpType where
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
-} deriving (Show, Eq)
+--    reprMetric :: Maybe TensorType
+} deriving (Eq, Ord)
+
+instance Show ReprType where
+    showsPrec i repr =
+        (showParen True
+        $ shows (reprDim repr))
+        . showString ": "
+        . shows (reprGroup repr)
+
+-- class Metric a where
+--     getMetricType :: a -> TensorType
+--     getMetric :: a -> ValenceType -> ValenceType -> Calc
+--
+-- instance Metric ReprType where
+--     getMetricType repr = TensorType "g" [repr, repr]
+--     getMetric repr (v1, v2) = Tensor "g" [Index repr v1, Index repr v2]
 
 data FunctionType = FunctionType {
     funcName :: String,
@@ -81,14 +102,30 @@ data BookState = BookState {
     -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
+
+-- Representation should have maybe metric associated
+-- standardTensors = [TensorType {
+--     tensorName = "g",
+--     tensorIndices = [IndexType 1 (GroupType "metric" [1]) "a"]
+-- }]
+
 emptyBook :: BookState
 emptyBook = BookState [] [] [] $ M.fromList []
 
-lookupTensor :: String -> BookState -> TensorType
-lookupTensor l bs = head $ filter (\t -> tensorName t == l) $ bookTensors bs
+lookupTensor' :: e -> String -> BookState -> Either e TensorType
+lookupTensor' e s = (maybeToEither e) . lookupTensor s
 
-lookupOp :: String -> BookState -> OpType
-lookupOp l bs = head $ filter (\t -> opName t == l) $ bookOps bs
+lookupTensor :: String -> BookState -> Maybe TensorType
+lookupTensor l bs = listToMaybe $ filter (\t -> tensorName t == l) $ bookTensors bs
+
+lookupOp :: String -> BookState -> Maybe OpType
+lookupOp l bs = listToMaybe $ filter (\t -> opName t == l) $ bookOps bs
+
+lookupOp' :: e -> String -> BookState -> Either e OpType
+lookupOp' e s = maybeToEither e . lookupOp s
+
+lookupCalc' :: e -> String -> BookState -> Either e Calc
+lookupCalc' e s = maybeToEither e . lookupCalc s
 
 lookupCalc :: String -> BookState -> Maybe Calc
 lookupCalc s bs = M.lookup s (bookCalcs bs)
@@ -110,14 +147,25 @@ data Calc
     | Number Rational
     | Tensor TensorName [Index]
     | Op OpName [Index] Calc
-    deriving (Show, Eq)
+    deriving (Show, Eq, Ord)
+
+instance Uniplate Calc where
+    uniplate (Sum s1 s2) = plate Sum |* s1 |* s2
+    uniplate (Prod f1 f2) = plate Prod |* f1 |* f2
+    uniplate (Transform s c) = plate Transform |- s ||* c
+    uniplate (Power i c) = plate Power |- i |* c
+    uniplate (Permute p c) = plate Permute |- p |* c
+    uniplate (Contract i1 i2 c) = plate Contract |- i1 |- i2 |* c
+    uniplate (Number n) = plate Number |- n
+    uniplate (Tensor n idx) = plate Tensor |- n |- idx
+    uniplate (Op n idx c) = plate Op |- n |- idx |* c
 
 data Index = Index {
     indexRepr :: ReprType,
     indexValence :: ValenceType
-} deriving (Show, Eq)
+} deriving (Show, Eq, Ord)
 
-data ValenceType = Up | Down deriving (Show, Eq)
+data ValenceType = Up | Down deriving (Show, Eq, Ord)
 
 infixl 5 |*|
 infixl 4 |+|
@@ -144,42 +192,64 @@ indexTypeFromCalc (Contract i1 i2 c)
 indexTypeFromCalc (Op n idx c) = (map indexToIndexType idx) ++ indexTypeFromCalc c
 
 indexToIndexType :: Index -> IndexType
-indexToIndexType i = IndexType (reprDim $ indexRepr i) (reprGroup $ indexRepr i) "_"
+indexToIndexType i = ReprType (reprDim $ indexRepr i) (reprGroup $ indexRepr i)
 
-calcFromExpr :: Abs.Expr -> Reader BookState (Calc, [(String, Index)])
-calcFromExpr x = case x of
+type Error = Except String
+
+maybeToEither :: e -> Maybe a -> Either e a
+maybeToEither e (Nothing) = Left e
+maybeToEither _ (Just x)  = Right x
+
+calcFromExpr :: Abs.Expr -> BookState -> Either String Calc
+calcFromExpr x bs = second fst $ runExcept $ runReaderT (calcFromExpr' x) bs
+
+calcFromExpr' :: Abs.Expr -> (ReaderT BookState (Except String)) (Calc, [(String, Index)])
+calcFromExpr' x = case x of
   Abs.Add expr1 expr2 -> do
-    (calc1, idx1) <- calcFromExpr expr1
-    (calc2, _) <- calcFromExpr expr2
+    (calc1, idx1) <- calcFromExpr' expr1
+    (calc2, _) <- calcFromExpr' expr2
     return (calc1 |+| calc2, idx1)
   Abs.Sub expr1 expr2 -> do
-    (calc1, idx1) <- calcFromExpr expr1
-    (calc2, _) <- calcFromExpr expr2
+    (calc1, idx1) <- calcFromExpr' expr1
+    (calc2, _) <- calcFromExpr' expr2
     return (calc1 |+| Number (-1) |*| calc2, idx1)
   Abs.Neg expr -> do
-    (calc, idx) <- calcFromExpr expr
+    (calc, idx) <- calcFromExpr' expr
     return (Number (-1) |*| calc, idx)
   Abs.Div expr (Abs.Number num) -> do
-    (calc, idx) <- calcFromExpr expr
+    (calc, idx) <- calcFromExpr' expr
     return (calc |*| Number (1 % num), idx)
   Abs.Div expr (Abs.Fraction p q) -> do
-    (calc, idx) <- calcFromExpr expr
+    (calc, idx) <- calcFromExpr' expr
     return (calc |*| Number (p % q), idx)
   Abs.Div _ _ -> undefined
   Abs.Tensor (Abs.Label l) absIdx -> do
     maybeCalc <- asks (lookupCalc l)
-    tensorType <- asks (lookupTensor l)
+    tensorType <- asks (lookupTensor' ("Undefined tensor '" ++ l ++ "'") l) >>= liftEither
     let indexTypes = tensorIndices tensorType
     let freeSlots = T.freeIndexPos x
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
     let calc = case maybeCalc of
             Just storedCalc -> storedCalc
-            Nothing -> (Tensor l indices)
+            Nothing -> Tensor l indices
     let contractedCalc = contractNew contractions calc
     return (Permute perm contractedCalc, sortedIdxAndLabels)
+  Abs.Anon i absIdx -> do
+    let varName = '$' : show i
+    maybeCalc <- asks (lookupCalc' ("Undefined expression identifier '$" ++ show i ++ "'") varName) >>= liftEither
+    tensorType <- asks (lookupTensor' ("Undefined expression identifier '$" ++ show i ++ "'") varName) >>= liftEither
+    let indexTypes = tensorIndices tensorType
+    let freeSlots = T.freeIndexPos x
+    let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
+    --let calc = maybeCalc
+    let contractedCalc = contractNew contractions maybeCalc
+    return (Permute perm contractedCalc, sortedIdxAndLabels)
+    --case maybeCalc of
+    --  Nothing -> lift Nothing
+    --  Just storedCalc -> do
   Abs.Op (Abs.Label l) absIdx expr -> do
-    (calc, idx) <- calcFromExpr expr
-    opType <- asks (lookupOp l)
+    (calc, idx) <- calcFromExpr' expr
+    opType <- asks (lookupOp' ("Undefined operator '" ++ l ++ "'") l) >>= liftEither
     let calcAbsIndices = map labeledIndexToAbsIndex idx
     let indexTypes = opIndices opType ++ indexTypeFromCalc calc
     let allIndices = absIdx ++ calcAbsIndices
@@ -191,14 +261,16 @@ calcFromExpr x = case x of
   Abs.Number p -> return (Number (fromInteger p), [])
   Abs.Fraction p q -> return (Number (p % q), [])
   Abs.Mul expr1 expr2 -> do
-    (calc1, idx1) <- calcFromExpr expr1
-    (calc2, idx2) <- calcFromExpr expr2
+    (calc1, idx1) <- calcFromExpr' expr1
+    (calc2, idx2) <- calcFromExpr' expr2
     let offset = length (T.freeIndexSlots expr1)
     let (perm, contracted, f') = processBinaryIndexed idx1 idx2 offset
-    let res = (Permute perm $ contractNew contracted $ calc1 |*| calc2, f')
+    let res = if isIdentityPermutation perm
+                then (contractNew contracted $ calc1 |*| calc2, f')
+                else (Permute perm $ contractNew contracted $ calc1 |*| calc2, f')
     return $ res
   Abs.Func (Abs.Label name) (expr:[]) -> do
-    (calc, idx) <- calcFromExpr expr
+    (calc, idx) <- calcFromExpr' expr
     return $ (execute name calc, idx)
 
   x -> (return $ (traceShow ("vinsten: " ++ show x) (Number 1), []))
@@ -300,7 +372,7 @@ selfContractedIndexPairs idxs = nestedPairs
           nestedPairs = getNestedPairsNew intersection (length idxs)
 
 indexTypeToIndex:: Abs.Index -> IndexType -> Index
-indexTypeToIndex av IndexType{indexDim=d,indexGroup=g} = Index r v
+indexTypeToIndex av ReprType{reprDim=d,reprGroup=g} = Index r v
             where r = ReprType d g
                   v = calcVal av
                   calcVal (Abs.Upper _) = Up
@@ -321,9 +393,10 @@ execute :: String -> Calc -> Calc
 execute "distribute" = distribute
 execute "leibnitz" = leibnitz
 execute "simpop" = simplifyOp
-execute "simpn" = simplifyN
+execute "simpn" = simplifyWin
 execute "simpnp" = simplifyN'
 execute "show" = showCalc
+execute "sort" = sortCalc
 execute _ = id
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -386,6 +459,50 @@ simplifyN' (Permute p c) = Permute p (simplifyN' c)
 simplifyN' (Contract i1 i2 c) = Contract i1 i2 (simplifyN' c)
 simplifyN' (Op n idx c) = Op n idx (simplifyN' c)
 simplifyN' x = x
+
+
+-- instance Ord Calc where
+--   (Number _ ) <= (Tensor _ _) = True
+--   t@(Tensor _ _) <= n@(Number _) = not (n <= t)
+--   _ <= _ = undefined
+
+-- i <= j -> i <= j
+-- i <= t -> true
+-- i * s <= t * j -> i <= j
+-- i * s <= j * t -> i <= j
+-- i + j
+-- i <= t * j
+
+-- Prod i (Prod t j)
+-- Prod i*j t
+-- i * (j * (k * (l * t))) <==> t * (i * ((k * j) * l))
+--
+
+sortCalc :: Calc -> Calc
+sortCalc = transform f
+  where f s@(Sum s1 s2)
+          | s1 <= s2 = s
+          | otherwise = Sum s2 s1
+        f p@(Prod p1 p2)
+          | p1 <= p2 = p
+          | otherwise = Prod p2 p1
+        f x = x
+
+simplifyFactors :: Calc -> Calc
+simplifyFactors = transform simplifyFactors'
+
+--simplify = simplifyN . simplifyOp
+
+simplifyFactors' :: Calc -> Calc
+simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
+simplifyFactors' x = x
+
+simplifyTerms' :: Calc -> Calc
+simplifyTerms' (Sum (Number n) (Number m)) = Number (n+m)
+
+simplifyWin = undefined
+
+-- simplify = transform simplifyFactors' . simplifyTerms'
 
 -- a + a + a -> 3*a
 collectTerms :: Abs.Expr -> Abs.Expr

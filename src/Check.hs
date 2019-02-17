@@ -7,6 +7,7 @@ import Frontend.ErrM
 import Control.Monad
 import Control.Monad.State
 import Control.Monad.Reader
+
 import Data.List
 import qualified Data.Map as M
 
@@ -14,6 +15,7 @@ import Core (
     BookState(..),
     GroupType(..),
     IndexType(..),
+    ReprType(..),
     FunctionType(..),
     TensorType(..),
     OpType(..),
@@ -41,12 +43,19 @@ analyzeStmt stmt = case stmt of
     StmtOpDef labels opdef -> analyzeOpDef labels opdef >> return stmt
     StmtFuncDef ident exprs _ -> funcAppend (FunctionType (labelFromIdent ident) (length exprs)) >> return stmt
     StmtAssign (Label l) expr -> do
-        runReaderT (analyzeExpr expr) ([] :: [Index])
+        _ <- runReaderT (analyzeExpr expr) ([] :: [Index])
         bs <- get
-        let (calc, idx) = runReader (calcFromExpr expr) bs
-        calcAppend l calc
-        return stmt
-    StmtVoid expr -> runReaderT (analyzeExpr expr) ([] :: [Index]) >> return stmt
+        case calcFromExpr expr bs of
+            Left err -> fail err
+            Right calc -> calcAppend l calc >> return stmt
+    StmtVoid expr -> do
+        _ <- runReaderT (analyzeExpr expr) ([] :: [Index])
+        bs <- get
+        -- let (calc, _) = runReaderT (calcFromExpr exr) bs
+        -- return stmt
+        case calcFromExpr expr bs of
+            Left err -> fail err
+            Right calc -> anonymousAppend calc >> return stmt
     _ -> return stmt
 
 analyzeTensorDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
@@ -71,7 +80,7 @@ analyzeIndex :: TensorDef -> [IndexType]
 analyzeIndex (ScalarDef) = []
 analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = map indexType indices
     where group = GroupType gl $ numsToInts nums
-          indexType (IndexGroup (Label il) idim) = IndexType (fromInteger idim) group il
+          indexType (IndexGroup (Label il) idim) = ReprType (fromInteger idim) group
 
 analyzeIndices :: [TensorDef] -> [IndexType]
 analyzeIndices = concatMap analyzeIndex
@@ -165,6 +174,12 @@ numsToInts ns = map (fromInteger . numListToInteger) ns
 
 numListToInteger :: NumList -> Integer
 numListToInteger (NumList n) = n
+
+nextAnonymous :: BookState -> String
+nextAnonymous = ('$':) . show . M.size . bookCalcs
+
+anonymousAppend :: Monad m => Calc -> StateT BookState m ()
+anonymousAppend c = get >>= flip calcAppend c . nextAnonymous
 
 calcAppend :: Monad m => String -> Calc -> StateT BookState m ()
 calcAppend s c = modify(\t -> t {

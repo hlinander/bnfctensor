@@ -52,18 +52,16 @@ appendCalc bs s c = bs
 
 evalExpr :: BookState -> Expr -> IO (BookState, String)
 evalExpr bs expr = do
-    let (calc, idx) = runReader (calcFromExpr expr) bs
-    return (bs, "<math>" ++ renderCalc calc mathML ++ "</math><br>")
+    case calcFromExpr expr bs of
+        Left err -> return (bs, err)
+        Right calc -> return (bs, "<math>" ++ renderCalc calc mathML ++ "</math><br>")
 
 -- substitute : replace with new tensor def variable
 -- expand variable : replace with contents of variable
 
 evalStatement :: BookState -> Stmt -> IO (BookState, String)
 evalStatement bs stmt  = case stmt of
-    StmtAssign (Label var) expr -> do
-        let (calc, idx) = runReader (calcFromExpr expr) bs
-        let bs' = appendCalc bs var calc
-        evalExpr bs' expr
+    StmtAssign _ expr -> evalExpr bs expr
     StmtVoid expr -> evalExpr bs expr
     StmtFuncDef name exprs stmts -> undefined
     StmtTensorDef ts ds -> return (bs, concat $ map show ts)

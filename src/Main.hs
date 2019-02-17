@@ -54,10 +54,9 @@ type ReplState = (BookState, [String])
 
 evalExpr :: String -> BookState -> Expr -> IO BookState
 evalExpr var bs expr = do
-    let (calc, idx) = runReader (calcFromExpr expr) bs
-    putStrLn $ renderCalc calc console -- TODO maybe add ?? "\x2234 " ++
-    -- putStrLn $ show idx
-    return $ bs -- appendCalc bs var calc -- TODO FIXME PLS DOES NOT APPEND ANYMORE
+    case calcFromExpr expr bs of
+      Left err -> putErr err >> return bs
+      Right calc -> putSuccess ( renderCalc calc console ) >> return bs -- TODO maybe add ?? "\x2234 " ++
 
 evalStatement :: BookState -> Stmt -> IO BookState
 evalStatement bs stmt  = case stmt of
@@ -125,7 +124,7 @@ replRL bs = do
             bs' <- loadBook "book"
             -- showTensors bs'
             replRL bs'
-          stmt -> repl' bs stmt >>= replRL
+          stmt -> repl' bs (stmt ++ ";") >>= replRL
 
 repl' :: BookState -> String -> IO BookState
 repl' bs input = case parse input of
@@ -140,13 +139,6 @@ handleStmts :: BookState -> [Stmt] -> IO BookState
 handleStmts bs [] = return bs
 handleStmts bs (st:sts) = evalStatement bs st >>= flip handleStmts sts
 
-appendCalc :: BookState -> String -> Calc -> BookState
-appendCalc bs s c = bs {
-    bookCalcs = M.insert s c $ bookCalcs bs,
-    bookTensors = (tensorTypeFromCalc s c) : (bookTensors bs)
-}
--- appendCalc :: BookState -> Calc -> BookState
--- appendCalc bs c = bs { bookCalcs = c : bookCalcs bs }
 
 -- run :: String -> IO ()
 -- run s = case parse s of

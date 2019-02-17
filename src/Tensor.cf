@@ -6,8 +6,8 @@ Derivation. Book ::= [Stmt] ;
 -- Statements
 -----------------------------------------------------------------------
 
-StmtVoid.        Stmt ::= Expr ";" ;
-StmtAssign.      Stmt ::= "var" Label "=" Expr ";" ;
+StmtVoid.        Stmt ::= Expr ;
+StmtAssign.      Stmt ::= "var" Label "=" Expr ;
 StmtSymmetry.    Stmt ::= Sym ;
 StmtTensorDef.   Stmt ::= "tensor" [LabelList] "{" [TensorDef] "}" ;
 StmtOpDef.       Stmt ::= "op" [LabelList] "{" [TensorDef] "}" ;
@@ -15,8 +15,10 @@ StmtRowDoc.      Stmt ::= DocString ;
 StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr6] ")" "{" [Stmt] "}" ;
 -- FuncTypeDef. Stmt ::= 
 
-(:[]). [Stmt] ::= Stmt ;
-(:).   [Stmt] ::= Stmt [Stmt] ;
+(:[]). [Stmt] ::= Stmt ";" ;
+(:).   [Stmt] ::= Stmt ";" [Stmt] ;
+
+-- token Close '\n' ;
 
 -----------------------------------------------------------------------
 -- Tensor type declaration
@@ -86,6 +88,7 @@ Func.  Expr5 ::= Label "!" "(" [Expr] ")" ;
 
 -- Indexed. Expr3 ::= Expr3 [Index]
 Tensor.  Expr6 ::= Label [Index] ;
+Anon.    Expr6 ::= "$" Integer [Index] ;
 
 (:[]). [Expr6] ::= Expr6 ;
 (:).   [Expr6] ::= Expr6 "," [Expr6] ;
@@ -121,7 +124,7 @@ LabelList. LabelList ::= Label ;
 (:[]). [LabelList] ::= LabelList ;
 (:). [LabelList] ::= LabelList "," [LabelList] ;
 
-token Label letter (letter | digit)* ;
+token Label letter (letter | digit )* ;
 
 -----------------------------------------------------------------------
 -- Documentation

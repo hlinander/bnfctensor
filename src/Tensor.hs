@@ -8,6 +8,7 @@ import Frontend.AbsTensor
 usedIndices :: Expr -> [Index]
 usedIndices x = case x of
     Tensor _ indices -> indices
+    Anon _ indices -> indices
     Op _ indices expr -> indices ++ (usedIndices expr)
     Func label exprs -> concat (map usedIndices exprs) -- MEGA TODO ONLY WORKS WITH DISTRIBUTE
     Add expr1 expr2 -> union (usedIndices expr1) (usedIndices expr2)
@@ -23,6 +24,9 @@ freeIndices x = freeIndices_ x []
 
 freeIndices_ x s = case x of
         -- in s, in indices or free
+    Anon _ indices -> filter isFree indices
+        where isFree index = not (indexLabelIn index s || occurences index indices > 1)
+              occurences x list = length $ filter (valenceFreeEq x) list
     Tensor _ indices -> filter isFree indices
         where isFree index = not (indexLabelIn index s || occurences index indices > 1)
               occurences x list = length $ filter (valenceFreeEq x) list
@@ -47,6 +51,9 @@ freeIndexSlots_ x s = case x of
     Tensor _ indices -> zip (filter isFree indices) [0..]
         where isFree index = not (indexLabelIn index (map fst s) || occurences index indices > 1)
               occurences x list = length $ filter (valenceFreeEq x) list
+    Anon _ indices -> zip (filter isFree indices) [0..]
+        where isFree index = not (indexLabelIn index (map fst s) || occurences index indices > 1)
+              occurences x list = length $ filter (valenceFreeEq x) list
     Neg expr -> freeIndexSlots_ expr s
     Div expr1 expr2 -> freeIndexSlots expr1
     Number integer -> []
@@ -67,6 +74,7 @@ freeIndexPos_ :: Expr -> [(Index, Int)] -> [(Index, Int)]
 freeIndexPos_ x s = case x of
         -- in s, in indices or free
     Tensor _ indices -> freeIndicesWithPos indices s
+    Anon _ indices -> freeIndicesWithPos indices s
     Neg expr -> freeIndexPos_ expr s
     Div expr1 expr2 -> freeIndexPos_ expr1 s
     Number integer -> []

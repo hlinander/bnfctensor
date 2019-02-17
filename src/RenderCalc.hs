@@ -81,10 +81,10 @@ type FreeIndices = [String]
 type RenderState = FreeIndices
 
 freeLabels :: [String]
-freeLabels = map (:[]) ['a'..'z']
+freeLabels = map (:['\x0332']) ['a'..'z']
 
 dummyLabels :: [String]
-dummyLabels = map (:['\x0332']) ['a'..'z']
+dummyLabels = map (:[]) ['a'..'z']
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
@@ -117,7 +117,7 @@ renderCalc' prec target x = case x of
         rs2 <- (renderCalc' sumPrec target) s2
         let wrap = renderOp target . renderParen (prec > sumPrec) target
         return $ wrap (rs1 ++ (target Plus) ++ rs2)
-    Prod (Number n) f2 -> (++) <$> renderCalc' prec target (Number n) <*> renderCalc' prec target f2
+    -- Prod (Number n) f2 -> (++) <$> renderCalc' prec target (Number n) <*> renderCalc' prec target f2
     Prod f1 f2 -> do
         frees <- R.ask
         let freeSlots = map numFreeSlots [f1, f2]
@@ -182,3 +182,7 @@ numFreeSlots x = case x of
     Permute _ t -> numFreeSlots t
     Op _ idxs c -> (length idxs) + numFreeSlots c
     _ -> 0
+
+-- renderTree :: Calc -> String
+-- 
+-- calcToTree (Sum )
