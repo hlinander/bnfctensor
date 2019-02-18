@@ -11,6 +11,8 @@ import qualified Frontend.AbsTensor as Abs (
     Label(..)
  )
 
+import System.IO.Unsafe
+
 import Control.Monad.Reader
 import Control.Monad.Except
 
@@ -18,6 +20,7 @@ import Data.Bifunctor
 import Data.Maybe
 import Data.List
 import Data.Ratio
+import Data.Tree
 
 import Data.Generics.Uniplate.Direct
 import Math.Combinat.Permutations
@@ -139,8 +142,8 @@ type OpName = String
 
 data Calc
     = Number Rational
-    | Sum Calc Calc
     | Prod Calc Calc
+    | Sum Calc Calc
     | Transform String [Calc]
     | Power Int Calc
     | Permute Permutation Calc
@@ -233,7 +236,10 @@ calcFromExpr' x = case x of
             Just storedCalc -> storedCalc
             Nothing -> Tensor l indices
     let contractedCalc = contractNew contractions calc
-    return (Permute perm contractedCalc, sortedIdxAndLabels)
+    let res = if isIdentityPermutation perm
+                then contractedCalc
+                else Permute perm contractedCalc
+    return (res, sortedIdxAndLabels)
   Abs.Anon i absIdx -> do
     let varName = '$' : show i
     maybeCalc <- asks (lookupCalc' ("Undefined expression identifier '$" ++ show i ++ "'") varName) >>= liftEither
@@ -243,7 +249,10 @@ calcFromExpr' x = case x of
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
     --let calc = maybeCalc
     let contractedCalc = contractNew contractions maybeCalc
-    return (Permute perm contractedCalc, sortedIdxAndLabels)
+    let res = if isIdentityPermutation perm
+                then contractedCalc
+                else Permute perm contractedCalc
+    return (res, sortedIdxAndLabels)
     --case maybeCalc of
     --  Nothing -> lift Nothing
     --  Just storedCalc -> do
@@ -256,7 +265,9 @@ calcFromExpr' x = case x of
     let freeSlots = T.freeIndicesWithPos allIndices []
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject allIndices indexTypes freeSlots
     let contractedCalc = contractNew contractions (Op l (take (length absIdx) indices) calc)
-    let permCalc = Permute perm contractedCalc
+    let permCalc = if isIdentityPermutation perm
+                    then contractedCalc
+                    else Permute perm contractedCalc
     return (permCalc, sortedIdxAndLabels)
   Abs.Number p -> return (Number (fromInteger p), [])
   Abs.Fraction p q -> return (Number (p % q), [])
@@ -397,6 +408,7 @@ execute "simpf" = simplifyFactors
 execute "simpnp" = simplifyN'
 execute "simp" = simplify
 execute "show" = showCalc
+execute "tree" = renderTreeRepl
 execute "sort" = sortCalc
 execute _ = id
 
@@ -576,3 +588,21 @@ riemann = undefined
 ricci = undefined
 weyl = undefined
 
+
+renderTreeRepl :: Calc -> Calc
+renderTreeRepl c = unsafePerformIO $ do
+  putStrLn (renderTree c) >> return c
+
+renderTree :: Calc -> String
+renderTree = drawTree . calcToTree
+
+-- renderTreeHTML :: Calc -> String
+-- renderTreeHTML = (htmlTree Nothing) . calcToTree
+
+calcToTree :: Calc -> Tree String
+calcToTree (Sum t1 t2) = Node ("(+)") [calcToTree t1, calcToTree t2]
+calcToTree (Prod f1 f2) = Node ("(*)") [calcToTree f1, calcToTree f2]
+calcToTree (Permute p c) = Node (show p) [calcToTree c]
+calcToTree (Contract i1 i2 c) = Node (show i1 ++ show i2) [calcToTree c]
+calcToTree (Op l idx c) = Node (l ++ "[" ++ show idx ++ "]") [calcToTree c]
+calcToTree x = Node (show x) []

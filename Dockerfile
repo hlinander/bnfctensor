@@ -12,3 +12,4 @@ RUN cabal install ipython-kernel
 RUN apt-get install -y ipython python-jupyter-client
 RUN cabal install lens
 RUN cabal install uniplate
+RUN cabal install tree-view

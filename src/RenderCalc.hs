@@ -183,6 +183,3 @@ numFreeSlots x = case x of
     Op _ idxs c -> (length idxs) + numFreeSlots c
     _ -> 0
 
--- renderTree :: Calc -> String
--- 
--- calcToTree (Sum )
