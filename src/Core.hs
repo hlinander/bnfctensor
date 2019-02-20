@@ -136,13 +136,13 @@ type OpName = String
 
 data Calc
     = Number Rational
+    | Tensor TensorName [Index]
     | Prod Calc Calc
     | Sum Calc Calc
     | Transform String [Calc]
     | Power Int Calc
     | Permute Permutation Calc
     | Contract Int Int Calc
-    | Tensor TensorName [Index]
     | Op OpName [Index] Calc
     deriving (Show, Eq, Ord)
 
@@ -173,9 +173,18 @@ c1 |*| c2 = Prod c1 c2
 (|+|) :: Calc -> Calc -> Calc
 c1 |+| c2 = Sum c1 c2
 
+setValence :: Calc -> Int -> ValenceType -> Calc
+setValence (Tensor n idx) i v =
+    let (lh, index:rh) = splitAt i idx
+        newIndex = Index (indexRepr index) v
+        newIndices = lh ++ (newIndex:rh)
+    in Tensor n newIndices
+setValence _ _ _ = undefined
+
 changeValence :: BookState -> Calc -> Int -> Either String Calc
 changeValence bs c i = do
-    let indices = traceShow ((show i) ++ ":") $ traceShowId $ indexFromCalc c
+    --let indices = traceShow ((show i) ++ ":") $ traceShowId $ indexFromCalc c
+    let indices = indexFromCalc c
     let index = indices!!i
     let r = indexRepr index
     let valence = indexValence index
@@ -449,6 +458,7 @@ execute "show" = showCalc
 execute "tree" = renderTreeRepl
 execute "sort" = sortCalc
 execute "collect" = fixPoint collectTerms
+execute "elmetrics" = fixPoint eliminateMetrics
 execute _ = id
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -513,10 +523,14 @@ commuteContractPermute = transform commuteContractPermute'
 collectTerms :: Calc -> Calc
 collectTerms = transform collectTerms'
 
+eliminateMetrics :: Calc -> Calc
+eliminateMetrics = transform eliminateMetrics'
+
 simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
 simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
 simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
+simplifyFactors' (Prod (Number 1) f) = f
 simplifyFactors' x = x
 
 simplifyTerms' :: Calc -> Calc
@@ -536,6 +550,10 @@ simplifyContract' :: Calc -> Calc
 simplifyContract' (Contract i1 i2 (Sum t1 t2)) = Sum (Contract i1 i2 t1) (Contract i1 i2 t2)
 simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contract i1 i2 f)
 simplifyContract' x = x
+
+eliminateMetrics' :: Calc -> Calc
+eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, ti2]) t@(Tensor _ _))) | i2 > 1 && 1 >= i1 = setValence t (i2 - 2) (indexValence ti1)
+eliminateMetrics' x = x
 
 collectTerms' :: Calc -> Calc
 collectTerms' (Sum t1 t2) | t1 == t2 = Prod (Number 2) t1

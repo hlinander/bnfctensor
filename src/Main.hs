@@ -34,6 +34,8 @@ import Core (
     emptyBook
  )
 
+lambdaPrompt = "λ> "
+
 putColor :: Color -> String -> IO ()
 putColor color msg = do
   setSGR [SetColor Foreground Vivid color]
@@ -60,11 +62,11 @@ evalExpr var bs expr = do
 
 evalStatement :: BookState -> Stmt -> IO BookState
 evalStatement bs stmt  = case stmt of
-    StmtAssign (Label var) expr -> putStr (var ++ " := ") >> evalExpr var bs expr
-    StmtVoid expr -> evalExpr "" bs expr
+    StmtAssign (Label var) expr -> putStrLn (lambdaPrompt ++ var ++ " := " ++ printTree expr) >> putStr (var ++ " := ") >> evalExpr var bs expr
+    StmtVoid expr -> putStr (lambdaPrompt ++ show expr) >> evalExpr "" bs expr
     StmtFuncDef name exprs stmts -> undefined
-    StmtTensorDef ts ds -> (putSuccess $ concat $ L.map show ts) >> return bs
-    StmtOpDef os ds -> (putSuccess $ concat $ L.map show os) >> return bs
+    td@(StmtTensorDef ts ds) -> putStrLn (printTree td) >> return bs
+    od@(StmtOpDef os ds) -> putStrLn (printTree od) >> return bs
 
 bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
@@ -106,7 +108,7 @@ repl = replRL emptyBook
 replRL :: BookState -> IO ()
 replRL bs = do
   setAttemptedCompletionFunction (Just $ attemptCompletion bs)
-  l <- readline "λ> "
+  l <- readline lambdaPrompt
   case l of
     Nothing -> return ()
     Just "exit" -> return ()
