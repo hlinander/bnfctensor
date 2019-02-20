@@ -1,4 +1,4 @@
-.PHONY: build-docker all ghci clean
+.PHONY: build-docker all ghci clean ghci-debug
 
 all:
 	docker run --rm -v $(PWD)/src:/bnfctensor -w /bnfctensor bnfctensor:latest make
@@ -11,6 +11,9 @@ build-docker:
 
 ghci:
 	(cd src && make docker-ghci)
+
+ghci-debug:
+	(cd src && make docker-ghci-debug)
 
 run:
 	docker run --rm -it -v $(PWD)/src:/bnfctensor -w /bnfctensor bnfctensor:latest /bnfctensor/tensor

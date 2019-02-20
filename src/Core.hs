@@ -21,6 +21,7 @@ import Data.Maybe
 import Data.List
 import Data.Ratio
 import Data.Tree
+import Data.Foldable
 
 import Data.Generics.Uniplate.Direct
 import Math.Combinat.Permutations
@@ -45,13 +46,13 @@ data GroupType = GroupType {
 instance Show GroupType where
     showsPrec i g = showString (groupName g) . showList (groupDims g)
 
-createRepr :: GroupType -> Int -> ReprType
-createRepr = flip ReprType
+-- createRepr :: GroupType -> Int -> ReprType
+-- createRepr = flip ReprType
 
 data TensorType = TensorType {
     tensorName :: String,
     tensorIndices :: [IndexType]
-} deriving Eq
+} deriving (Eq, Ord)
 
 instance Show TensorType where
     showsPrec i t = showString (tensorName t)
@@ -73,7 +74,7 @@ instance Show OpType where
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
---    reprMetric :: Maybe TensorType
+    --reprMetric :: Maybe TensorType
 } deriving (Eq, Ord)
 
 instance Show ReprType where
@@ -82,14 +83,6 @@ instance Show ReprType where
         $ shows (reprDim repr))
         . showString ": "
         . shows (reprGroup repr)
-
--- class Metric a where
---     getMetricType :: a -> TensorType
---     getMetric :: a -> ValenceType -> ValenceType -> Calc
---
--- instance Metric ReprType where
---     getMetricType repr = TensorType "g" [repr, repr]
---     getMetric repr (v1, v2) = Tensor "g" [Index repr v1, Index repr v2]
 
 data FunctionType = FunctionType {
     funcName :: String,
@@ -101,19 +94,20 @@ data BookState = BookState {
     bookTensors :: [TensorType],
     bookOps :: [OpType],
     bookFuncs :: [FunctionType],
-    bookCalcs :: M.Map String Calc
+    bookCalcs :: M.Map String Calc,
+    bookMetrics :: M.Map ReprType TensorType
     -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
 
--- Representation should have maybe metric associated
--- standardTensors = [TensorType {
---     tensorName = "g",
---     tensorIndices = [IndexType 1 (GroupType "metric" [1]) "a"]
--- }]
-
 emptyBook :: BookState
-emptyBook = BookState [] [] [] $ M.fromList []
+emptyBook = BookState [] [] [] (M.fromList []) (M.fromList [])
+
+lookupMetric' :: e-> ReprType -> BookState -> Either e TensorType
+lookupMetric' e r = (maybeToEither e) . lookupMetric r
+
+lookupMetric :: ReprType -> BookState -> Maybe TensorType
+lookupMetric r bs = M.lookup r (bookMetrics bs)
 
 lookupTensor' :: e -> String -> BookState -> Either e TensorType
 lookupTensor' e s = (maybeToEither e) . lookupTensor s
@@ -179,6 +173,42 @@ c1 |*| c2 = Prod c1 c2
 (|+|) :: Calc -> Calc -> Calc
 c1 |+| c2 = Sum c1 c2
 
+changeValence :: BookState -> Calc -> Int -> Either String Calc
+changeValence bs c i = do
+    let indices = traceShow ((show i) ++ ":") $ traceShowId $ indexFromCalc c
+    let index = indices!!i
+    let r = indexRepr index
+    let valence = indexValence index
+    let targetValence = otherValence valence
+    metric <- lookupMetric' ("No metric for representation " ++ (show r)) r bs
+    let newIndex = Index r targetValence
+    let newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| c
+    let contracted = Contract 1 (i+2) newCalc
+    let cycle = cycleLeft i
+    let rest = identity $ (length indices) - i
+    let perm = concatPermutations cycle rest
+    return $ Permute perm contracted
+
+otherValence :: ValenceType -> ValenceType
+otherValence Up = Down
+otherValence Down = Up
+
+indexFromCalc :: Calc -> [Index]
+indexFromCalc x = case x of
+  (Number _) -> []
+  (Power _ _) -> []
+  (Tensor _ []) -> []
+  (Tensor _ idx) -> idx
+  (Sum first _) -> indexFromCalc first
+  (Prod f1 f2) -> indexFromCalc f1 ++ indexFromCalc f2
+  -- Permuted indices must be of same type so can just pass through
+  (Permute p c) -> indexFromCalc c
+  (Contract i1 i2 c)
+      | i1 < i2 -> deleteAt i1 $ deleteAt i2 (indexFromCalc c)
+  (Contract i1 i2 c)
+      | i1 > i2 -> deleteAt i2 $ deleteAt i1 (indexFromCalc c)
+  (Op n idx c) -> idx ++ indexFromCalc c
+
 tensorTypeFromCalc :: String -> Calc -> TensorType
 tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
 
@@ -195,7 +225,8 @@ indexTypeFromCalc (Contract i1 i2 c)
 indexTypeFromCalc (Op n idx c) = (map indexToIndexType idx) ++ indexTypeFromCalc c
 
 indexToIndexType :: Index -> IndexType
-indexToIndexType i = ReprType (reprDim $ indexRepr i) (reprGroup $ indexRepr i)
+indexToIndexType i = indexRepr i
+--indexToIndexType i = ReprType (reprDim $ indexRepr i) (reprGroup $ indexRepr i)
 
 type Error = Except String
 
@@ -229,12 +260,19 @@ calcFromExpr' x = case x of
   Abs.Tensor (Abs.Label l) absIdx -> do
     maybeCalc <- asks (lookupCalc l)
     tensorType <- asks (lookupTensor' ("Undefined tensor '" ++ l ++ "'") l) >>= liftEither
+    bs <- ask
     let indexTypes = tensorIndices tensorType
     let freeSlots = T.freeIndexPos x
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
-    let calc = case maybeCalc of
-            Just storedCalc -> storedCalc
-            Nothing -> Tensor l indices
+    calc <- case maybeCalc of
+      Just storedCalc -> liftEither $ newCalc
+          where storedIndices = indexFromCalc storedCalc
+                valences = map indexValence storedIndices
+                requestedValences = map absIndexValence absIdx
+                needsFix = filter (\(v, rv, _) -> v /= rv) (zip3 valences requestedValences [0..])
+                positions = map (\(_, _, i) -> i) needsFix
+                newCalc = foldlM (changeValence bs) storedCalc positions
+      Nothing -> return $ Tensor l indices
     let contractedCalc = contractNew contractions calc
     let res = if isIdentityPermutation perm
                 then contractedCalc
@@ -383,15 +421,18 @@ selfContractedIndexPairs idxs = nestedPairs
           nestedPairs = getNestedPairsNew intersection (length idxs)
 
 indexTypeToIndex:: Abs.Index -> IndexType -> Index
-indexTypeToIndex av ReprType{reprDim=d,reprGroup=g} = Index r v
-            where r = ReprType d g
-                  v = calcVal av
+indexTypeToIndex av r@ReprType{reprDim=d,reprGroup=g} = Index r v
+            where v = calcVal av
                   calcVal (Abs.Upper _) = Up
                   calcVal (Abs.Lower _) = Down
 
 indexLabel :: Abs.Index -> String
 indexLabel (Abs.Upper (Abs.Label lbl)) = lbl
 indexLabel (Abs.Lower (Abs.Label lbl)) = lbl
+
+absIndexValence :: Abs.Index -> ValenceType
+absIndexValence (Abs.Upper _) = Up
+absIndexValence (Abs.Lower _) = Down
 
 data Transformation
     = Rewrite { rewriteMatch :: (->) Calc Bool, rewriteWith :: Calc }
@@ -403,13 +444,11 @@ compose = undefined
 execute :: String -> Calc -> Calc
 execute "distribute" = distribute
 execute "leibnitz" = leibnitz
-execute "simpop" = simplifyOp
-execute "simpf" = simplifyFactors
-execute "simpnp" = simplifyN'
 execute "simp" = simplify
 execute "show" = showCalc
 execute "tree" = renderTreeRepl
 execute "sort" = sortCalc
+execute "collect" = fixPoint collectTerms
 execute _ = id
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -440,57 +479,7 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
-simplifyOp :: Calc -> Calc
-simplifyOp = fixPoint simplifyOp'
-
-simplifyOp' :: Calc -> Calc
-simplifyOp' (Op n idx (Permute p c)) = Permute (concatPermutations (identity (length idx)) p) (Op n idx c)
-simplifyOp' (Op n idx (Contract i1 i2 c)) = Contract (i1 + length idx) (i2 + length idx) (Op n idx c)
-simplifyOp' (Sum s1 s2) = Sum (simplifyOp s1) (simplifyOp s2)
-simplifyOp' (Prod s1 s2) = Prod (simplifyOp s1) (simplifyOp s2)
-simplifyOp' (Contract i1 i2 c) = Contract i1 i2 (simplifyOp c)
-simplifyOp' (Permute p c) = Permute p (simplifyOp c)
-simplifyOp' c = c
-
-simplifyN :: Calc -> Calc
-simplifyN = fixPoint simplifyN'
-
-simplifyN' :: Calc -> Calc
-simplifyN' (Prod (Number n) (Number m)) = Number (n*m)
-simplifyN' (Permute p (Number n)) = Number n
-simplifyN' (Prod f1 (Permute p (Prod (Number n) f2))) = Prod (Number n) (Prod f1 (Permute p f2))
-simplifyN' (Prod (Permute p (Prod (Number n) f1)) f2) = Prod (Number n) (Prod (Permute p f1) f2)
-simplifyN' (Prod f1 (Number n)) = Prod (Number n) (simplifyN' f1)
-simplifyN' (Prod (Number n1) (Prod (Number n2) f2)) = Prod (Number (n1*n2)) (simplifyN' f2)
-simplifyN' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (simplifyN' (Prod f1 f2))
-simplifyN' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (simplifyN' (Prod f1 f2))
-simplifyN' (Prod f1 f2) = Prod (simplifyN' f1) (simplifyN' f2)
-simplifyN' (Sum (Number n) (Number m)) = Number (n+m)
-simplifyN' (Sum s1 (Number n)) = Sum (Number n) (simplifyN' s1)
-simplifyN' (Sum s1 s2) = Sum (simplifyN' s1) (simplifyN' s2)
-simplifyN' (Permute p c) = Permute p (simplifyN' c)
-simplifyN' (Contract i1 i2 c) = Contract i1 i2 (simplifyN' c)
-simplifyN' (Op n idx c) = Op n idx (simplifyN' c)
-simplifyN' x = x
-
-
--- instance Ord Calc where
---   (Number _ ) <= (Tensor _ _) = True
---   t@(Tensor _ _) <= n@(Number _) = not (n <= t)
---   _ <= _ = undefined
-
--- i <= j -> i <= j
--- i <= t -> true
--- i * s <= t * j -> i <= j
--- i * s <= j * t -> i <= j
--- i + j
--- i <= t * j
-
--- Prod i (Prod t j)
--- Prod i*j t
--- i * (j * (k * (l * t))) <==> t * (i * ((k * j) * l))
---
-simplify = simplifyPermutations . simplifyTerms . simplifyFactors . sortCalc
+simplify = fixPoint commuteContractPermute . simplifyContract . simplifyPermutations . simplifyTerms . simplifyFactors . sortCalc
 
 sortCalc :: Calc -> Calc
 sortCalc = transform f
@@ -499,7 +488,11 @@ sortCalc = transform f
           | otherwise = Sum s2 s1
         f p@(Prod p1 p2)
           | p1 <= p2 = p
+          | (p1 > p2 && (l1 > 0 && l2 > 0)) = Permute perm $ Prod p2 p1
           | otherwise = Prod p2 p1
+              where l1 = length $ indexFromCalc p1
+                    l2 = length $ indexFromCalc p2
+                    perm = multiplyMany $ map (\_ -> (cycleLeft (l1 + l2))) [1..l1]
         f x = x
 
 simplifyFactors :: Calc -> Calc
@@ -510,6 +503,15 @@ simplifyTerms = transform simplifyTerms'
 
 simplifyPermutations :: Calc -> Calc
 simplifyPermutations = transform simplifyPermutations'
+
+simplifyContract :: Calc -> Calc
+simplifyContract = transform simplifyContract'
+
+commuteContractPermute :: Calc -> Calc
+commuteContractPermute = transform commuteContractPermute'
+
+collectTerms :: Calc -> Calc
+collectTerms = transform collectTerms'
 
 simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
@@ -524,13 +526,38 @@ simplifyTerms' (Sum (Sum (Number n) f1) f2) = Sum (Number n) (Sum f1 f2)
 simplifyTerms' x = x
 
 simplifyPermutations' :: Calc -> Calc
+simplifyPermutations' (Prod (Permute p f1) f2) = Permute (concatPermutations p $ identity (length $ indexFromCalc f2)) (Prod f1 f2)
 simplifyPermutations' (Permute p (Prod (Number n) f)) = Prod (Number n) (Permute p f)
 simplifyPermutations' (Permute p (Sum t1 t2)) = Sum (Permute p t1) (Permute p t2)
+simplifyPermutations' (Permute p (Permute q c)) = Permute (multiply p q) c
 simplifyPermutations' x = x
 
--- a + a + a -> 3*a
-collectTerms :: Abs.Expr -> Abs.Expr
-collectTerms = undefined
+simplifyContract' :: Calc -> Calc
+simplifyContract' (Contract i1 i2 (Sum t1 t2)) = Sum (Contract i1 i2 t1) (Contract i1 i2 t2)
+simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contract i1 i2 f)
+simplifyContract' x = x
+
+collectTerms' :: Calc -> Calc
+collectTerms' (Sum t1 t2) | t1 == t2 = Prod (Number 2) t1
+collectTerms' x = x
+
+-- Contract 1 3 (Permute [0 1 2 3])
+-- Contract i1 i2 @ Permute p list = Permute p' @ Contract i1' i2' list
+-- p(i1') = i1 => i1' = p^-1(i1)
+commuteContractPermute' :: Calc -> Calc
+commuteContractPermute' (Contract i1 i2 (Permute perm c)) = if permutationSize newPerm > 0
+  then Permute newPerm (Contract i1'' i2'' c)
+  else (Contract i1'' i2'' c)
+    where list = [0..permutationSize perm]
+          permuted = permuteList (inverse perm) list
+          permuted' = if i1 < i2
+            then deleteAt i1 (deleteAt i2 permuted)
+            else deleteAt i2 (deleteAt i1 permuted)
+          newPerm = sortingPermutationAsc permuted'
+          i1' = fromJust $ elemIndex i1 (permuteList perm list)
+          i2' = fromJust $ elemIndex i2 (permuteList perm list)
+          [i1'', i2''] = sort [i1', i2'] :: [Int]
+commuteContractPermute' x = x
 
 -- a * a * a -> a^3
 collectFactors :: Abs.Expr -> Abs.Expr

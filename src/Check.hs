@@ -58,32 +58,48 @@ analyzeStmt stmt = case stmt of
             Right calc -> anonymousAppend calc >> return stmt
     _ -> return stmt
 
+-- analyzeTensorDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
+-- analyzeTensorDef lls def = mapM_ (maybeAppend . tensor) labels
+--     where labels = map labelsFromList lls
+--           tensor label = TensorType label (analyzeIndices def)
+--           maybeAppend l = do
+--             defined <- tensorDefined l
+--             if defined then fail "Tensor already defined: " -- ++ show $ lookupTensor l
+--             else tensorAppend l
+
 analyzeTensorDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
-analyzeTensorDef lls def = mapM_ (maybeAppend . tensor) labels
-    where labels = map labelsFromList lls
-          tensor label = TensorType label (analyzeIndices def)
-          maybeAppend l = do
-            defined <- tensorDefined l
-            if defined then fail "Tensor already defined: " -- ++ show $ lookupTensor l
-            else tensorAppend l
+analyzeTensorDef lls def = do
+    indices <- analyzeIndices def
+    let labels = map labelsFromList lls
+        tensor label = TensorType label indices
+        maybeAppend l = do
+          defined <- tensorDefined l
+          if defined then fail "Tensor already defined: " -- ++ show $ lookupTensor l
+          else tensorAppend l
+    mapM_ (maybeAppend . tensor) labels
 
 analyzeOpDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
-analyzeOpDef lls def = mapM_ (maybeAppend . op) labels
-    where labels = map labelsFromList lls
-          op label = OpType label (analyzeIndices def)
-          maybeAppend l = do
-            defined <- opDefined l
-            if defined then fail "Op already defined: " -- ++ show $ lookupTensor l
-            else opAppend l
+analyzeOpDef lls def = do
+    indices <- analyzeIndices def
+    let labels = map labelsFromList lls
+        op label = OpType label indices
+        maybeAppend l = do
+          defined <- opDefined l
+          if defined then fail "Op already defined: " -- ++ show $ lookupTensor l
+          else opAppend l
+    mapM_ (maybeAppend . op) labels
 
-analyzeIndex :: TensorDef -> [IndexType]
-analyzeIndex (ScalarDef) = []
-analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = map indexType indices
-    where group = GroupType gl $ numsToInts nums
-          indexType (IndexGroup (Label il) idim) = ReprType (fromInteger idim) group
+analyzeIndex :: TensorDef -> (StateT BookState Err) [IndexType]
+analyzeIndex (ScalarDef) = return []
+analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = do
+    let group = GroupType gl $ numsToInts nums
+        indexType (IndexGroup (Label il) idim) = ReprType (fromInteger idim) group
+        reprs = map indexType indices
+    _ <- mapM (\r -> metricAppend r (TensorType "g" [r, r])) reprs
+    mapM (return . indexType) indices
 
-analyzeIndices :: [TensorDef] -> [IndexType]
-analyzeIndices = concatMap analyzeIndex
+analyzeIndices :: [TensorDef] -> (StateT BookState Err) [IndexType]
+analyzeIndices tds = liftM concat $ mapM analyzeIndex tds
 
 analyzeExpr :: Expr -> ReaderT [Index] (StateT BookState Err) Expr
 analyzeExpr expr = do
@@ -185,6 +201,12 @@ calcAppend :: Monad m => String -> Calc -> StateT BookState m ()
 calcAppend s c = modify(\t -> t {
     bookCalcs = M.insert s c $ bookCalcs t,
     bookTensors = (tensorTypeFromCalc s c) : (bookTensors t)
+})
+
+metricAppend :: Monad m => ReprType -> TensorType -> StateT BookState m ()
+metricAppend r t = modify(\bs -> bs {
+    bookTensors = (t : bookTensors bs),
+    bookMetrics = M.insert r t $ bookMetrics bs
 })
 
 tensorAppend :: Monad m => TensorType -> StateT BookState m ()

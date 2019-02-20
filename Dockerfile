@@ -13,3 +13,4 @@ RUN apt-get install -y ipython python-jupyter-client
 RUN cabal install lens
 RUN cabal install uniplate
 RUN cabal install tree-view
+RUN apt install -y ghc-8.6.3-prof

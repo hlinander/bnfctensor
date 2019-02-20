@@ -1,6 +1,5 @@
 module RenderCalc where
 
-import Data.List
 import Data.Ratio
 import qualified Math.Combinat.Permutations as P
 
@@ -9,7 +8,6 @@ import qualified Control.Monad.State as S
 
 import Core
 import Util
-import Debug.Trace
 
 data Component
     = StartOp
@@ -80,11 +78,13 @@ console EndNumber    = ""
 type FreeIndices = [String]
 type RenderState = FreeIndices
 
+infLabels = map (("a"++).show) ([1..] :: [Int])
+
 freeLabels :: [String]
-freeLabels = map (:['\x0332']) ['a'..'z']
+freeLabels = (map (:['\x0332']) ['a'..'z']) ++ infLabels
 
 dummyLabels :: [String]
-dummyLabels = map (:[]) ['a'..'z']
+dummyLabels = (map (:[]) $ reverse ['a'..'z']) ++ infLabels
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
@@ -134,7 +134,7 @@ renderCalc' prec target x = case x of
         frees <- R.ask
         let newFrees = insertAt i2 dummy $ insertAt i1 dummy frees
         R.local (const newFrees) (renderCalc' prec target t)
-    Contract i1 i2 _ | i1 > i2 -> undefined
+    Contract i1 i2 c | i1 > i2 -> renderCalc' prec target (Contract i2 i1 c)
     Number n ->
         case q of
             1 -> return $ target StartNumber ++ show p ++ target EndNumber
@@ -176,7 +176,7 @@ renderIndex target (label, Index{indexValence=Down}) = (renderIdent target $ ren
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of
     Prod f1 f2 -> numFreeSlots f1 + numFreeSlots f2
-    Sum s1 s2 -> numFreeSlots s1
+    Sum s1 _ -> numFreeSlots s1
     Contract _ _ expr -> numFreeSlots expr - 2
     Tensor _ idxs -> length idxs
     Permute _ t -> numFreeSlots t

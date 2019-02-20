@@ -75,6 +75,7 @@ Mul.   Expr2 ::= Expr2 Expr3 ;
 Div.   Expr2 ::= Expr2 "/" Expr3 ;
 Op.    Expr4 ::= Label [Index] "~" "(" Expr ")" ;
 Func.  Expr5 ::= Label "!" "(" [Expr] ")" ;
+-- PostFunc.  Expr5 ::= "(" Expr ")" ">>" Label;
 
 -- D@func!(vinst)
 -- D A A @vinst

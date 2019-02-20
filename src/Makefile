@@ -1,4 +1,4 @@
-.PHONY: all clean docker-ghci docker
+.PHONY: all clean docker-ghci docker docker-ghci-debug
 
 all: tensor tensorkernel
 
@@ -13,6 +13,9 @@ docker: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTen
 
 docker-ghci:
 	docker run --rm -it -v $(PWD):/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:latest
+
+docker-ghci-debug:
+	docker run --rm -it -v $(PWD):/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:debug2 ghci -fexternal-interpreter -prof
 
 clean:
 	-rm -f tensor *.hi *.o Frontend/*.hi Frontend/*.o
