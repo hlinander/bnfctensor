@@ -179,6 +179,14 @@ setValence (Tensor n idx) i v =
         newIndex = Index (indexRepr index) v
         newIndices = lh ++ (newIndex:rh)
     in Tensor n newIndices
+setValence (Op n idx c) i v
+  | i < (length idx) =
+    let (lh, index:rh) = splitAt i idx
+        newIndex = Index (indexRepr index) v
+        newIndices = lh ++ (newIndex:rh)
+    in Op n newIndices c
+setValence (Op n idx c) i v
+  | i >= (length idx) = Op n idx (setValence c (i - (length idx)) v)
 setValence _ _ _ = undefined
 
 changeValence :: BookState -> Calc -> Int -> Either String Calc
@@ -290,7 +298,7 @@ calcFromExpr' x = case x of
   Abs.Anon i absIdx -> do
     let varName = '$' : show i
     maybeCalc <- asks (lookupCalc' ("Undefined expression identifier '$" ++ show i ++ "'") varName) >>= liftEither
-    tensorType <- asks (lookupTensor' ("Undefined expression identifier '$" ++ show i ++ "'") varName) >>= liftEither
+    tensorType <- asks (lookupTensor' ("Undefined tensor identifier '$" ++ show i ++ "'") varName) >>= liftEither
     let indexTypes = tensorIndices tensorType
     let freeSlots = T.freeIndexPos x
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
@@ -530,6 +538,7 @@ simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
 simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
 simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
+simplifyFactors' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (Prod f1 f2) -- TODO: Duplicate rule
 simplifyFactors' (Prod (Number 1) f) = f
 simplifyFactors' x = x
 
@@ -541,6 +550,7 @@ simplifyTerms' x = x
 
 simplifyPermutations' :: Calc -> Calc
 simplifyPermutations' (Prod (Permute p f1) f2) = Permute (concatPermutations p $ identity (length $ indexFromCalc f2)) (Prod f1 f2)
+simplifyPermutations' (Prod f1 (Permute p f2)) = Permute (concatPermutations (identity (length $ indexFromCalc f1)) p) (Prod f1 f2)
 simplifyPermutations' (Permute p (Prod (Number n) f)) = Prod (Number n) (Permute p f)
 simplifyPermutations' (Permute p (Sum t1 t2)) = Sum (Permute p t1) (Permute p t2)
 simplifyPermutations' (Permute p (Permute q c)) = Permute (multiply p q) c
@@ -552,7 +562,16 @@ simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contra
 simplifyContract' x = x
 
 eliminateMetrics' :: Calc -> Calc
-eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, ti2]) t@(Tensor _ _))) | i2 > 1 && 1 >= i1 = setValence t (i2 - 2) (indexValence ti1)
+eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, ti2]) t@(Tensor _ idx)))
+  | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
+    where pFix = concatPermutations cycle rest
+          cycle = cycleLeft $ (i2 - 2) + 1
+          rest = identity $ (length idx) - ((i2 - 2) + 1)
+eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, ti2]) t@(Op _ _ _)))
+  | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
+    where pFix = concatPermutations cycle rest
+          cycle = cycleLeft $ (i2 - 2) + 1
+          rest = identity $ (length (indexFromCalc t)) - ((i2 - 2) + 1)
 eliminateMetrics' x = x
 
 collectTerms' :: Calc -> Calc

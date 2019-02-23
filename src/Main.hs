@@ -35,6 +35,7 @@ import Core (
  )
 
 lambdaPrompt = "λ> "
+evalPrefix = "\t"
 
 putColor :: Color -> String -> IO ()
 putColor color msg = do
@@ -58,12 +59,12 @@ evalExpr :: String -> BookState -> Expr -> IO BookState
 evalExpr var bs expr = do
     case calcFromExpr expr bs of
       Left err -> putErr err >> return bs
-      Right calc -> putSuccess ( renderCalc calc console ) >> return bs -- TODO maybe add ?? "\x2234 " ++
+      Right calc -> putSuccess ( evalPrefix ++ renderCalc calc console ) >> return bs -- TODO maybe add ?? "\x2234 " ++
 
 evalStatement :: BookState -> Stmt -> IO BookState
 evalStatement bs stmt  = case stmt of
-    StmtAssign (Label var) expr -> putStrLn (lambdaPrompt ++ var ++ " := " ++ printTree expr) >> putStr (var ++ " := ") >> evalExpr var bs expr
-    StmtVoid expr -> putStr (lambdaPrompt ++ show expr) >> evalExpr "" bs expr
+    StmtAssign (Label var) expr -> putStrLn (var ++ " := " ++ printTree expr) >> putStr (var ++ " := ") >> evalExpr var bs expr
+    StmtVoid expr -> putStrLn (printTree expr) >> evalExpr "" bs expr
     StmtFuncDef name exprs stmts -> undefined
     td@(StmtTensorDef ts ds) -> putStrLn (printTree td) >> return bs
     od@(StmtOpDef os ds) -> putStrLn (printTree od) >> return bs

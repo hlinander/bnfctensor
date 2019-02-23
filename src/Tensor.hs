@@ -54,6 +54,10 @@ freeIndexSlots_ x s = case x of
     Anon _ indices -> zip (filter isFree indices) [0..]
         where isFree index = not (indexLabelIn index (map fst s) || occurences index indices > 1)
               occurences x list = length $ filter (valenceFreeEq x) list
+    Op _ indices expr -> zip (filter isFree allIndices) [0..]
+        where isFree index = not (indexLabelIn index (map fst s) || occurences index allIndices > 1)
+              occurences x list = length $ filter (valenceFreeEq x) list
+              allIndices = indices ++ freeIndices expr
     Neg expr -> freeIndexSlots_ expr s
     Div expr1 expr2 -> freeIndexSlots expr1
     Number integer -> []

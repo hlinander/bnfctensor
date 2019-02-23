@@ -116,6 +116,8 @@ prop_commuteContractPermute (ContractableCalc calc) = do
     let r2 = renderConsole $ commuteContractPermute' contracted
     return $ counterexample (r1 ++ " /= " ++ r2) (r1 == r2)
 
+-- prop_eliminateMetric ()
+
 prop_renderCalc :: Calc -> Bool
 prop_renderCalc calc = (length (renderConsole calc) > 0)
 

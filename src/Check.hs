@@ -22,7 +22,8 @@ import Core (
     Calc,
     calcFromExpr,
     emptyBook,
-    tensorTypeFromCalc
+    tensorTypeFromCalc,
+    lookupTensor
  )
 
 import Tensor ( freeIndices,
@@ -192,7 +193,7 @@ numListToInteger :: NumList -> Integer
 numListToInteger (NumList n) = n
 
 nextAnonymous :: BookState -> String
-nextAnonymous = ('$':) . show . M.size . bookCalcs
+nextAnonymous = ('$':) . show . length . filter (isPrefixOf "$") . M.keys . bookCalcs
 
 anonymousAppend :: Monad m => Calc -> StateT BookState m ()
 anonymousAppend c = get >>= flip calcAppend c . nextAnonymous
@@ -205,7 +206,9 @@ calcAppend s c = modify(\t -> t {
 
 metricAppend :: Monad m => ReprType -> TensorType -> StateT BookState m ()
 metricAppend r t = modify(\bs -> bs {
-    bookTensors = (t : bookTensors bs),
+    bookTensors = case lookupTensor (tensorName t) bs of
+        Just _ -> bookTensors bs
+        Nothing ->(t : bookTensors bs),
     bookMetrics = M.insert r t $ bookMetrics bs
 })
 
