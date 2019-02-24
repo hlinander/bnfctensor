@@ -6,3 +6,4 @@ tensor
 *.sw?
 .vscode
 env/
+.ipynb_checkpoints/
