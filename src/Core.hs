@@ -209,8 +209,8 @@ changeValence bs c i = do
     let newIndex = Index r targetValence
     let newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| c
     let contracted = Contract 1 (i+2) newCalc
-    let cycle = cycleLeft i
-    let rest = identity $ (length indices) - i
+    let cycle = cycleLeft (i + 1)
+    let rest = identity $ (length indices) - (i + 1)
     let perm = concatPermutations cycle rest
     return $ Permute perm contracted
 
@@ -227,7 +227,7 @@ indexFromCalc x = case x of
   (Sum first _) -> indexFromCalc first
   (Prod f1 f2) -> indexFromCalc f1 ++ indexFromCalc f2
   -- Permuted indices must be of same type so can just pass through
-  (Permute p c) -> indexFromCalc c
+  (Permute p c) -> permuteList p $ indexFromCalc c
   (Contract i1 i2 c)
       | i1 < i2 -> deleteAt i1 $ deleteAt i2 (indexFromCalc c)
   (Contract i1 i2 c)
