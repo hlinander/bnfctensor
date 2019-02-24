@@ -1,0 +1,19 @@
+// eta: Lorentz metric
+// T: infinitesimal Lorentz generator
+tensor eta, T { a(4), b(4): SO(3, 1) };
+tensor V { a(4): SO(3, 1) };
+
+// Metric with one co- and one contravariant index is equivalent to Kronecker delta
+var delta = g^a.b;
+
+// Infinitesimal Lorentz transformation
+var L = delta^a.b + T^a.b;
+
+var V' = L^a.b V^b;
+
+// Metric should be invariant under a Lorentz transformation
+var zero1 = L.a^m L.b^n eta.m.n - eta.a.b;
+var zero2 = distribute!(simp!(zero1));
+var zero3 = distribute!(simp!(zero2));
+var zero4 = distribute!(simp!(zero3));
+var zero5 = elmetrics!(simp!(zero4));

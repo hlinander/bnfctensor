@@ -99,6 +99,14 @@ data BookState = BookState {
     -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
+nextAnonymousId :: BookState -> Int
+nextAnonymousId = length . filter (isPrefixOf "$") . M.keys . bookCalcs
+
+nextAnonymous :: BookState -> String
+nextAnonymous = ('$':) . show . nextAnonymousId
+
+currentAnonymous :: BookState -> String
+currentAnonymous = ('$':) . show . flip (-) 1 . nextAnonymousId
 
 emptyBook :: BookState
 emptyBook = BookState [] [] [] (M.fromList []) (M.fromList [])

@@ -16,6 +16,7 @@ import IHaskell.IPython.Types
 
 import Core
 import Check (analyzeBookWithState)
+import Eval
 import Frontend.AbsTensor
 import Frontend.LexTensor (tokens)
 import Frontend.ParTensor (pBook)
@@ -50,30 +51,6 @@ appendCalc bs s c = bs
     {   bookCalcs = M.insert s c $ bookCalcs bs
     ,   bookTensors = (tensorTypeFromCalc s c) : (bookTensors bs) }
 
-evalExpr :: BookState -> Expr -> IO (BookState, String)
-evalExpr bs expr = do
-    case calcFromExpr expr bs of
-        Left err -> return (bs, err)
-        Right calc -> return (bs, "<math>" ++ renderCalc calc mathML ++ "</math><br>")
-
--- substitute : replace with new tensor def variable
--- expand variable : replace with contents of variable
-
-evalStatement :: BookState -> Stmt -> IO (BookState, String)
-evalStatement bs stmt  = case stmt of
-    StmtAssign _ expr -> evalExpr bs expr
-    StmtVoid expr -> evalExpr bs expr
-    StmtFuncDef name exprs stmts -> undefined
-    StmtTensorDef ts ds -> return (bs, concat $ map show ts)
-    StmtOpDef os ds -> return (bs, concat $ map show os)
-
-handleStmts :: BookState -> [Stmt] -> IO (BookState, String)
-handleStmts bs [] = return (bs, "")
-handleStmts bs (st:sts) = do
-    (bs', out) <- evalStatement bs st
-    (bs'', out') <- handleStmts bs' sts
-    return (bs'', out ++ out')
-
 runKernel :: MVar BookState -> T.Text -> IO () -> (String -> IO ()) -> IO (String, ExecuteReplyStatus, String)
 runKernel mbs input _ _ = case parse $ T.unpack input of
     E.Ok ast -> do
@@ -81,8 +58,7 @@ runKernel mbs input _ _ = case parse $ T.unpack input of
         case analyzeBookWithState bs ast of
             (E.Bad typeErr) -> putMVar mbs bs >> return (typeErr, IHaskell.IPython.Types.Err, "")
             (E.Ok (book, bs')) -> do
-                let (Derivation sts) = book
-                (bs'', render) <- handleStmts bs' sts
+                (bs'', render) <- evalBookMathML bs' book
                 putMVar mbs bs''
                 return (render, IHaskell.IPython.Types.Ok, show ast ++ "\n" ++ show bs'')
     E.Bad parseErr -> return (parseErr, IHaskell.IPython.Types.Err, "")

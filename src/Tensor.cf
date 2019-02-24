@@ -6,17 +6,17 @@ Derivation. Book ::= [Stmt] ;
 -- Statements
 -----------------------------------------------------------------------
 
-StmtVoid.        Stmt ::= Expr ;
-StmtAssign.      Stmt ::= "var" Label "=" Expr ;
-StmtSymmetry.    Stmt ::= Sym ;
-StmtTensorDef.   Stmt ::= "tensor" [LabelList] "{" [TensorDef] "}" ;
-StmtOpDef.       Stmt ::= "op" [LabelList] "{" [TensorDef] "}" ;
+StmtVoid.        Stmt ::= Expr ";" ;
+StmtAssign.      Stmt ::= "var" Label "=" Expr ";" ;
+StmtSymmetry.    Stmt ::= Sym ";" ;
+StmtTensorDef.   Stmt ::= "tensor" [LabelList] "{" [TensorDef] "}" ";" ;
+StmtOpDef.       Stmt ::= "op" [LabelList] "{" [TensorDef] "}" ";" ;
 StmtRowDoc.      Stmt ::= DocString ;
-StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr6] ")" "{" [Stmt] "}" ;
+StmtFuncDef.     Stmt ::= "func" Ident "(" [Expr6] ")" "{" [Stmt] "}" ";" ;
 -- FuncTypeDef. Stmt ::= 
 
-(:[]). [Stmt] ::= Stmt ";" ;
-(:).   [Stmt] ::= Stmt ";" [Stmt] ;
+(:[]). [Stmt] ::= Stmt ;
+(:).   [Stmt] ::= Stmt [Stmt] ;
 
 -- token Close '\n' ;
 

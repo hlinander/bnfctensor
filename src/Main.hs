@@ -16,12 +16,15 @@ import Check ( analyzeBook, analyzeBookWithState )
 import Data.Typeable
 import Data.Maybe
 import Data.List as L
+import qualified Data.Text as T
 import Data.Map as M
 import Debug.Trace
 
 import Control.Monad.State
 import Control.Monad.Reader
 import RenderCalc
+
+import Eval
 
 import Core (
     BookState(..),
@@ -55,19 +58,19 @@ putSuccess msg = putColor Green msg
 
 type ReplState = (BookState, [String])
 
-evalExpr :: String -> BookState -> Expr -> IO BookState
-evalExpr var bs expr = do
-    case calcFromExpr expr bs of
-      Left err -> putErr err >> return bs
-      Right calc -> putSuccess ( evalPrefix ++ renderCalc calc console ) >> return bs -- TODO maybe add ?? "\x2234 " ++
-
-evalStatement :: BookState -> Stmt -> IO BookState
-evalStatement bs stmt  = case stmt of
-    StmtAssign (Label var) expr -> putStrLn (var ++ " := " ++ printTree expr) >> putStr (var ++ " := ") >> evalExpr var bs expr
-    StmtVoid expr -> putStrLn (printTree expr) >> evalExpr "" bs expr
-    StmtFuncDef name exprs stmts -> undefined
-    td@(StmtTensorDef ts ds) -> putStrLn (printTree td) >> return bs
-    od@(StmtOpDef os ds) -> putStrLn (printTree od) >> return bs
+-- evalExpr :: String -> BookState -> Expr -> IO BookState
+-- evalExpr var bs expr = do
+--     case calcFromExpr expr bs of
+--       Left err -> putErr err >> return bs
+--       Right calc -> putSuccess ( evalPrefix ++ renderCalc calc console ) >> return bs -- TODO maybe add ?? "\x2234 " ++
+-- 
+-- evalStatement :: BookState -> Stmt -> IO BookState
+-- evalStatement bs stmt  = case stmt of
+--     StmtAssign (Label var) expr -> putStrLn (var ++ " := " ++ printTree expr) >> putStr (var ++ " := ") >> evalExpr var bs expr
+--     StmtVoid expr -> putStrLn (printTree expr) >> evalExpr "" bs expr
+--     StmtFuncDef name exprs stmts -> undefined
+--     td@(StmtTensorDef ts ds) -> putStrLn (printTree td) >> return bs
+--     od@(StmtOpDef os ds) -> putStrLn (printTree od) >> return bs
 
 bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
@@ -100,7 +103,7 @@ showTensor t = putStrLn $ tensorName t ++ " [" ++ (intercalate ", " (L.map show 
 showTensors :: BookState -> IO ()
 showTensors bs = mapM_ showTensor $ bookTensors bs
 
-loadBook :: FilePath -> IO BookState
+loadBook :: FilePath -> IO (BookState, String)
 loadBook f = readFile f >>= repl' emptyBook
 
 repl :: IO ()
@@ -123,24 +126,29 @@ replRL bs = do
           ":show groups <tensor>" -> undefined
           ":show all groups" -> undefined
           ":show all groups <name>" -> undefined
-          ":load" -> do
-            bs' <- loadBook "book"
+          --":load" -> do
+          ':':'l':'o':'a':'d':rest -> do
+            (bs', result) <- loadBook $ T.unpack (T.strip (T.pack rest))
+            putSuccess result
             -- showTensors bs'
             replRL bs'
-          stmt -> repl' bs (stmt ++ ";") >>= replRL
+          stmt -> do
+            (bs'', result) <- repl' bs (stmt ++ ";")
+            putSuccess result
+            replRL bs''
 
-repl' :: BookState -> String -> IO BookState
+repl' :: BookState -> String -> IO (BookState, String)
 repl' bs input = case parse input of
     Ok ast -> case analyzeBookWithState bs ast of
-      (Bad typeErr) -> putErr typeErr >> return bs
+      (Bad typeErr) -> putErr typeErr >> return (bs, "")
       (Ok (book, bs')) -> do
-        let (Derivation sts) = book
-        handleStmts bs' sts
-    Bad parseErr -> putErr parseErr >> return bs
+        (bs'', result) <- evalBookConsole bs' book
+        return (bs'', result)
+    Bad parseErr -> putErr parseErr >> return (bs, "")
 
-handleStmts :: BookState -> [Stmt] -> IO BookState
-handleStmts bs [] = return bs
-handleStmts bs (st:sts) = evalStatement bs st >>= flip handleStmts sts
+-- handleStmts :: BookState -> [Stmt] -> IO BookState
+-- handleStmts bs [] = return bs
+-- handleStmts bs (st:sts) = evalStatement bs st >>= flip handleStmts sts
 
 
 -- run :: String -> IO ()
@@ -196,4 +204,4 @@ main = repl
 --     ["--help"] -> usage
 --     [] -> hGetContents stdin >>= run
 --     "-s":fs -> mapM_ runFile fs
---     fs -> mapM_ runFile fs
+--     fs -> mapM_ runFile

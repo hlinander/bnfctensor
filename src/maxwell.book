@@ -1,0 +1,14 @@
+tensor A {
+    a(3): SO(4)
+};
+
+op D {
+    a(3): SO(4)
+};
+
+var F = D.a~(A.b) - D.b~(A.a);
+var e1 = simp!(distribute!(F.a.b F^a^b));
+var e2 = simp!(distribute!(e1));
+var e3 = simp!(distribute!(e2));
+var e4 = simp!(distribute!(e3));
+var e5 = simp!(elmetrics!(simp!(elmetrics!(e4))));

@@ -23,7 +23,8 @@ import Core (
     calcFromExpr,
     emptyBook,
     tensorTypeFromCalc,
-    lookupTensor
+    lookupTensor,
+    nextAnonymous
  )
 
 import Tensor ( freeIndices,
@@ -155,7 +156,7 @@ checkTensorDecl (Label s) indices = do
     case tensorType of
         [] -> fail $ "Tensor " ++ s ++ " not declared"
         ((TensorType _ defIndices) : []) | length defIndices == length indices -> return ()
-        ((TensorType _ _) : []) -> fail $ "Tensor " ++ s ++ " used with wrong rank"
+        ((TensorType _ defIndices) : []) -> fail $ "Tensor " ++ s ++ " used with wrong rank, expected " ++ (show defIndices)
         _ -> fail $ "Tensor " ++ s ++ " declared multiple times"
 
 checkOpDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
@@ -191,9 +192,6 @@ numsToInts ns = map (fromInteger . numListToInteger) ns
 
 numListToInteger :: NumList -> Integer
 numListToInteger (NumList n) = n
-
-nextAnonymous :: BookState -> String
-nextAnonymous = ('$':) . show . length . filter (isPrefixOf "$") . M.keys . bookCalcs
 
 anonymousAppend :: Monad m => Calc -> StateT BookState m ()
 anonymousAppend c = get >>= flip calcAppend c . nextAnonymous

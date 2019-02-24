@@ -1,4 +1,13 @@
-module RenderCalc where
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+
+
+module RenderCalc (
+    renderConsole,
+    renderMathML,
+    Printable(..),
+    PrintMode(..),
+    print
+) where
 
 import Data.Ratio
 import qualified Math.Combinat.Permutations as P
@@ -8,6 +17,36 @@ import qualified Control.Monad.State as S
 
 import Core
 import Util
+import Prelude hiding ( print )
+import Frontend.AbsTensor ( DocString(..) )
+
+data PrintMode = MathML | Console
+
+print :: Printable p => PrintMode -> p -> String
+print MathML = printML
+print Console = printConsole
+
+class Printable p where
+    printML :: p -> String
+    printConsole :: p -> String
+
+instance Printable Calc where
+    printML = renderMathML
+    printConsole = renderConsole
+
+instance Printable String where
+    printML s = "<span style=\"white-space: pre; font-family: monospace;\">" ++ s ++ "</span>"
+    printConsole = id
+
+instance Printable DocString where
+    printML (DocString s) = "<b>" ++ s ++ "</b><br/>"
+    printConsole (DocString s) = s
+
+renderConsole :: Calc -> String
+renderConsole = flip renderCalc console
+
+renderMathML :: Calc -> String
+renderMathML c = "<math>" ++ (renderCalc c mathML) ++ "</math><br>"
 
 data Component
     = StartOp
@@ -35,7 +74,8 @@ mathML :: Component -> String
 mathML StartOp      = "<mrow>\n"
 mathML EndOp        = "</mrow>\n"
 mathML Plus         = "<mo>+</mo>\n"
-mathML Times        = "<mo>⊗</mo>"
+--mathML Times        = "<mo>⊗</mo>"
+mathML Times        = "<mo></mo>"
 mathML OpenParen    = "<mo>(</mo>\n"
 mathML CloseParen   = "<mo>)</mo>\n"
 mathML StartFrac    = "<mfrac><mi>"
@@ -88,9 +128,6 @@ dummyLabels = (map (:[]) $ reverse ['a'..'z']) ++ infLabels
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
-
-renderConsole :: Calc -> String
-renderConsole = flip renderCalc console
 
 renderCalc :: Calc -> (Component -> String) -> String
 renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' 0 f x) emptyRenderEnv) dummyLabels
