@@ -1,3 +1,5 @@
+{-# LANGUAGE TemplateHaskell #-}
+
 import Test.QuickCheck
 import Test.QuickCheck.Arbitrary.Generic
 import Control.Monad
@@ -44,7 +46,7 @@ arbitraryContract :: Calc -> Gen Calc
 arbitraryContract c = do
     let n = length $ indexFromCalc c
     indices <- shuffle [0..(n-1)]
-    let [i1, i2] = sort $ take 2 indices
+    let [i1, i2] = L.sort $ take 2 indices
     return $ Contract i1 i2 c
 
 arbitraryPermute :: Calc -> Gen Calc
@@ -100,23 +102,22 @@ arbitraryTensor = do
 arbitraryIdentifier :: Gen String
 arbitraryIdentifier = vectorOf 2 (elements ['a'..'z']) >>= \(x:xs) -> return $ toUpper x : xs
 
-newtype ContractableCalc = ContractableCalc Calc deriving Show
-instance Arbitrary ContractableCalc where
-    arbitrary = ContractableCalc <$> (suchThat arbitraryCalc (\c -> (length $ indexFromCalc c) > 2))
+arbitraryContractable :: Gen Calc
+arbitraryContractable = suchThat arbitraryCalc (\c -> (length $ indexFromCalc c) > 2)
 
-prop_contractFreeIndices (ContractableCalc calc) = do
+prop_contractFreeIndices :: Property
+prop_contractFreeIndices = forAll arbitraryContractable $ \calc -> do
     contracted <- arbitraryContract calc
     let res = length (indexFromCalc contracted) == (length (indexFromCalc calc)) - 2
     return $ res
 
-prop_commuteContractPermute (ContractableCalc calc) = do
+prop_commuteContractPermute :: Property
+prop_commuteContractPermute = forAll arbitraryContractable $ \calc -> do
     permuted <- arbitraryPermute calc
     contracted <- arbitraryContract permuted
     let r1 = renderConsole contracted
     let r2 = renderConsole $ commuteContractPermute' contracted
     return $ counterexample (r1 ++ " /= " ++ r2) (r1 == r2)
-
--- prop_eliminateMetric ()
 
 prop_renderCalc :: Calc -> Bool
 prop_renderCalc calc = (length (renderConsole calc) > 0)
@@ -129,3 +130,8 @@ instance Arbitrary Abs.Label where
 
 instance Arbitrary Abs.Index where
     arbitrary = genericArbitrary
+
+return []
+runTests = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000 })
+
+main = runTests

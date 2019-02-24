@@ -570,12 +570,12 @@ simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contra
 simplifyContract' x = x
 
 eliminateMetrics' :: Calc -> Calc
-eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, ti2]) t@(Tensor _ idx)))
+eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Tensor _ idx)))
   | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
     where pFix = concatPermutations cycle rest
           cycle = cycleLeft $ (i2 - 2) + 1
           rest = identity $ (length idx) - ((i2 - 2) + 1)
-eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, ti2]) t@(Op _ _ _)))
+eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Op _ _ _)))
   | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
     where pFix = concatPermutations cycle rest
           cycle = cycleLeft $ (i2 - 2) + 1

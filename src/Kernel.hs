@@ -60,7 +60,7 @@ runKernel mbs input _ _ = case parse $ T.unpack input of
             (E.Ok (book, bs')) -> do
                 (bs'', render) <- evalBookMathML bs' book
                 putMVar mbs bs''
-                return (render, IHaskell.IPython.Types.Ok, show ast ++ "\n" ++ show bs'')
+                return (render, IHaskell.IPython.Types.Ok, "") -- show ast ++ "\n" ++ show bs'')
     E.Bad parseErr -> return (parseErr, IHaskell.IPython.Types.Err, "")
 
 bookstateCompletion :: BookState -> [String]
@@ -87,6 +87,15 @@ languageCompletion mbs code pos = do
     replace ',' = ' '
     replace x = x
 
+
+peekMVar :: MVar a -> IO a
+peekMVar v = takeMVar v >>= (\x -> putMVar v x >> return x)
+
+languageInspect :: MVar BookState -> T.Text -> Int -> IO (Maybe [DisplayData])
+languageInspect mbs code pos = do
+    a <- peekMVar mbs
+    return $ Just $ displayString "HELLO INSPECT"
+
 simpleConfig :: MVar BookState -> KernelConfig IO String String
 simpleConfig mbs = KernelConfig
     { kernelLanguageInfo = languageConfig
@@ -94,7 +103,7 @@ simpleConfig mbs = KernelConfig
     , displayOutput = displayString
     , displayResult = displayString
     , completion = languageCompletion mbs
-    -- , inspectInfo = languageInspect
+    , inspectInfo = languageInspect mbs
     , run = runKernel mbs
     , debug = False
     , kernelBanner = "Tensor Manipulation Assistant"

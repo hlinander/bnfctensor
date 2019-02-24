@@ -6,7 +6,7 @@ module RenderCalc (
     renderMathML,
     Printable(..),
     PrintMode(..),
-    print
+    printCalc
 ) where
 
 import Data.Ratio
@@ -22,6 +22,11 @@ import Frontend.AbsTensor ( DocString(..) )
 
 data PrintMode = MathML | Console
 
+printCalc :: Printable p => PrintMode -> p -> String
+printCalc MathML o = (print MathML o) ++ script
+printCalc Console o = (print Console o)
+
+-- (script++) . (css++) .
 print :: Printable p => PrintMode -> p -> String
 print MathML = printML
 print Console = printConsole
@@ -39,14 +44,14 @@ instance Printable String where
     printConsole = id
 
 instance Printable DocString where
-    printML (DocString s) = "<b>" ++ s ++ "</b><br/>"
+    printML (DocString s) = "<strong>" ++ s ++ "</strong><br>"
     printConsole (DocString s) = s
 
 renderConsole :: Calc -> String
-renderConsole = flip renderCalc console
+renderConsole = flip renderCalc Console
 
 renderMathML :: Calc -> String
-renderMathML c = "<math>" ++ (renderCalc c mathML) ++ "</math><br>"
+renderMathML c = "<math>" ++ (renderCalc c MathML) ++ "</math><br>"
 
 data Component
     = StartOp
@@ -69,6 +74,16 @@ data Component
     | EndDown
     | StartNumber
     | EndNumber
+    | TensorIdent String String
+    | IndexIdent String String
+
+script = "<script>registerTensorHover();</script>"
+
+niceLabelML s = case s of
+    "eta" -> "&eta;"
+    "delta" -> "&delta;"
+    s -> s
+
 
 mathML :: Component -> String
 mathML StartOp      = "<mrow>\n"
@@ -92,6 +107,8 @@ mathML EndUp        = "</mi>"
 mathML EndDown      = "</mi>"
 mathML StartNumber  = "<mn>"
 mathML EndNumber    = "</mn>"
+mathML (TensorIdent cs l) = "<mi mathvariant=\"bold\" class=\"tensor " ++ l ++ "\">" ++ niceLabelML l ++ "</mi>"
+mathML (IndexIdent cs l) = "<mi>" ++ l ++ "</mi>"
 
 console :: Component -> String
 console StartOp      = ""
@@ -114,6 +131,12 @@ console EndUp      = ""
 console EndDown    = ""
 console StartNumber  = ""
 console EndNumber    = ""
+console (TensorIdent cs l) = l
+console (IndexIdent cs l) = l
+
+instance Printable Component where
+    printML = mathML
+    printConsole = console
 
 type FreeIndices = [String]
 type RenderState = FreeIndices
@@ -129,8 +152,8 @@ dummyLabels = (map (:[]) $ reverse ['a'..'z']) ++ infLabels
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
 
-renderCalc :: Calc -> (Component -> String) -> String
-renderCalc x f = fst $ S.runState (R.runReaderT (renderCalc' 0 f x) emptyRenderEnv) dummyLabels
+renderCalc :: Calc -> PrintMode -> String
+renderCalc x m = fst $ S.runState (R.runReaderT (renderCalc' 0 m x) emptyRenderEnv) dummyLabels
 
 getFreesForFactors :: [Int] -> [String] -> [[String]]
 getFreesForFactors freeSlots frees = freesFactors
@@ -141,28 +164,25 @@ sumPrec = 4
 prodPrec = 5
 opPrec = 6
 
-renderParen pred target x = if pred then (target OpenParen) ++ x ++ (target CloseParen) else x
-renderOp target x = (target StartOp) ++ x ++ (target EndOp)
-renderIdent target x = (target StartIdent) ++ x ++ (target EndIdent)
-renderUp target x = (target StartUp) ++ x ++ (target EndUp)
-renderDown target x = (target StartDown) ++ x ++ (target EndDown)
+renderParen pred mode x = if pred then (print mode OpenParen) ++ x ++ (print mode CloseParen) else x
+renderOp mode x = (print mode StartOp) ++ x ++ (print mode EndOp)
 
-renderCalc' :: Int -> (Component -> String) -> Calc -> R.ReaderT RenderState (S.State [String]) String
-renderCalc' prec target x = case x of
+renderCalc' :: Int -> PrintMode -> Calc -> R.ReaderT RenderState (S.State [String]) String
+renderCalc' prec mode x = case x of
     Sum s1 s2 -> do
-        rs1 <- (renderCalc' sumPrec target) s1
-        rs2 <- (renderCalc' sumPrec target) s2
-        let wrap = renderOp target . renderParen (prec > sumPrec) target
-        return $ wrap (rs1 ++ (target Plus) ++ rs2)
+        rs1 <- (renderCalc' sumPrec mode) s1
+        rs2 <- (renderCalc' sumPrec mode) s2
+        let wrap =  renderOp mode . renderParen (prec > sumPrec) mode
+        return $ wrap (rs1 ++ (print mode Plus) ++ rs2)
     -- Prod (Number n) f2 -> (++) <$> renderCalc' prec target (Number n) <*> renderCalc' prec target f2
     Prod f1 f2 -> do
         frees <- R.ask
         let freeSlots = map numFreeSlots [f1, f2]
         let [free1, free2] = getFreesForFactors freeSlots frees
-        rf1 <- R.local (const free1) $ renderCalc' prodPrec target f1
-        rf2 <- R.local (const free2) $ renderCalc' prodPrec target f2
-        let wrap = renderOp target . renderParen (prec > prodPrec) target
-        return $ wrap (rf1 ++ (target Times) ++ rf2)
+        rf1 <- R.local (const free1) $ renderCalc' prodPrec mode f1
+        rf2 <- R.local (const free2) $ renderCalc' prodPrec mode f2
+        let wrap = renderOp mode . renderParen (prec > prodPrec) mode
+        return $ wrap (rf1 ++ (print mode Times) ++ rf2)
     Contract i1 i2 t | i1 < i2 -> do
         oldState <- S.get
         let newState = drop 1 oldState
@@ -170,45 +190,46 @@ renderCalc' prec target x = case x of
         S.put newState
         frees <- R.ask
         let newFrees = insertAt i2 dummy $ insertAt i1 dummy frees
-        R.local (const newFrees) (renderCalc' prec target t)
-    Contract i1 i2 c | i1 > i2 -> renderCalc' prec target (Contract i2 i1 c)
+        R.local (const newFrees) (renderCalc' prec mode t)
+    Contract i1 i2 c | i1 > i2 -> renderCalc' prec mode (Contract i2 i1 c)
     Number n ->
         case q of
             1 -> return $ target StartNumber ++ show p ++ target EndNumber
             _ -> return $ target StartFrac ++ show p ++ target MidFrac ++ show q ++ target EndFrac
       where p = numerator n
             q = denominator n
+            target = print mode
     Permute p c -> do
         localFrees <- R.ask
         let newFrees = P.permuteList p localFrees
-        R.local (const newFrees) $ renderCalc' prec target c
-    Tensor name [] -> return $ renderIdent target name
+        R.local (const newFrees) $ renderCalc' prec mode c
+    Tensor name [] -> return $ print mode (TensorIdent name name)
     Tensor name indices -> do
         localFrees <- R.ask
         let theIndices = zip localFrees indices
-        let open = (target StartTensor)
-        let indicesString = concatMap (renderIndex target) theIndices
-        let close = (target EndTensor)
-        return $ open ++ renderIdent target name ++ indicesString ++ close
+        let open = (print mode StartTensor)
+        let indicesString = concatMap (renderIndex mode) theIndices
+        let close = (print mode EndTensor)
+        return $ open ++ print mode (TensorIdent name name) ++ indicesString ++ close
     Op name [] calc -> do
-        calcString <- renderCalc' opPrec target calc
-        return $ renderIdent target name ++ calcString
+        calcString <- renderCalc' opPrec mode calc
+        return $ print mode (TensorIdent name name) ++ calcString
     Op name indices calc -> do
         localFrees <- R.ask
         let opPreIndices = take (length indices) localFrees
         let newLocalFrees = drop (length indices) localFrees
-        calcString <- R.local (const newLocalFrees) $ renderCalc' opPrec target calc
+        calcString <- R.local (const newLocalFrees) $ renderCalc' opPrec mode calc
         let opIndices_ = zip opPreIndices indices
-        let open = (target StartTensor)
-        let nameString = (target StartIdent) ++ name ++ (target EndIdent)
-        let indicesString = concatMap (renderIndex target) opIndices_
-        let close = (target EndTensor)
+        let open = (print mode StartTensor)
+        let nameString = print mode (TensorIdent name name)
+        let indicesString = concatMap (renderIndex mode) opIndices_
+        let close = (print mode EndTensor)
         return $ open ++ nameString ++ indicesString ++ close ++ calcString
     _ -> undefined
 
-renderIndex :: (Component -> String) -> (String, Index) -> String
-renderIndex target (label, Index{indexValence=Up}) = (target IndexPH) ++ (renderIdent target $ renderUp target label)
-renderIndex target (label, Index{indexValence=Down}) = (renderIdent target $ renderDown target label) ++ (target IndexPH)
+renderIndex :: PrintMode -> (String, Index) -> String
+renderIndex mode (label, Index{indexValence=Up}) = (print mode IndexPH) ++ (print mode (IndexIdent label label))
+renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent label label)) ++ (print mode IndexPH)
 
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of

@@ -1,0 +1,12 @@
+FROM haskell:8.6.3
+RUN apt-get update && apt install -y ghc-8.6.3-prof
+RUN apt install -y apt libicu-dev libtinfo-dev libgmp-dev libreadline-dev
+RUN cabal update && cabal install --enable-library-profiling combinat ansi-terminal QuickCheck generic-arbitrary readline
+RUN apt install bnfc alex happy
+RUN cabal install --enable-library-profiling split
+RUN apt-get install -y libzmq3-dev
+RUN cabal install --enable-library-profiling ipython-kernel
+RUN apt-get install -y ipython python-jupyter-client
+RUN cabal install --enable-library-profiling lens
+RUN cabal install --enable-library-profiling uniplate
+RUN cabal install --enable-library-profiling tree-view

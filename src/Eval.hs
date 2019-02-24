@@ -12,7 +12,7 @@ import RenderCalc
 import Frontend.AbsTensor
 import Frontend.PrintTensor
 
-import Prelude hiding ( print )
+import Prelude hiding ( printCalc )
 
 evalBookConsole :: BookState -> Book -> IO (BookState, String)
 evalBookConsole bs book = evalBook bs book Console
@@ -28,7 +28,7 @@ evalExpr bs expr = do
     mode <- ask
     case calcFromExpr expr bs of
         Left err -> return (bs, err)
-        Right calc -> return (bs, print mode calc)
+        Right calc -> return (bs, printCalc mode calc)
 
 -- substitute : replace with new tensor def variable
 -- expand variable : replace with contents of variable
@@ -38,7 +38,7 @@ evalExpr bs expr = do
 evalAssignExpr bs var expr = do
         mode <- ask
         (bs', render) <- evalExpr bs expr
-        return (bs', print mode ("[" ++ var ++ "]: ") ++ render)
+        return (bs', printCalc mode ("[" ++ var ++ "]: ") ++ render)
 
 --evalStatement :: BookState -> Stmt -> IO (BookState, String)
 evalStatement bs stmt  = do
@@ -47,9 +47,9 @@ evalStatement bs stmt  = do
         StmtAssign (Label var) expr -> evalAssignExpr bs var expr
         StmtVoid expr -> evalAssignExpr bs (currentAnonymous bs) expr
         StmtFuncDef name exprs stmts -> undefined
-        std@(StmtTensorDef ts ds) -> return (bs, print mode $ printTree std)
-        sto@(StmtOpDef os ds) -> return (bs, print mode $ printTree sto)
-        StmtRowDoc doc -> return (bs, print mode $ doc)
+        std@(StmtTensorDef ts ds) -> return (bs, printCalc mode $ printTree std)
+        sto@(StmtOpDef os ds) -> return (bs, printCalc mode $ printTree sto)
+        StmtRowDoc doc -> return (bs, printCalc mode $ doc)
 
 --handleStmts :: BookState -> [Stmt] -> (ReaderT RenderTarget IO) (BookState, String)
 handleStmts bs [] = return (bs, "")
