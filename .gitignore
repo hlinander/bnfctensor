@@ -1,4 +1,5 @@
 tensor
+tensorkernel
 *.hi
 *.o
 *.x
@@ -7,3 +8,4 @@ tensor
 .vscode
 env/
 .ipynb_checkpoints/
+src/Frontend/
