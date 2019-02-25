@@ -18,3 +18,6 @@ ghci-debug:
 
 run:
 	docker run --rm -it -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest ./tensor
+
+test:
+	(cd src && make docker-test)

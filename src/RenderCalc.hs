@@ -75,13 +75,18 @@ data Component
     | StartNumber
     | EndNumber
     | TensorIdent String String
-    | IndexIdent String String
+    | IndexIdent ValenceType String String
 
 script = "<script>registerTensorHover();</script>"
 
 niceLabelML s = case s of
     "eta" -> "&eta;"
     "delta" -> "&delta;"
+    s -> s
+
+niceLabelConsole s = case s of
+    "eta" -> "η"
+    "delta" -> "ẟ"
     s -> s
 
 
@@ -108,7 +113,8 @@ mathML EndDown      = "</mi>"
 mathML StartNumber  = "<mn>"
 mathML EndNumber    = "</mn>"
 mathML (TensorIdent cs l) = "<mi mathvariant=\"bold\" class=\"tensor " ++ l ++ "\">" ++ niceLabelML l ++ "</mi>"
-mathML (IndexIdent cs l) = "<mi>" ++ l ++ "</mi>"
+mathML (IndexIdent Up cs l) = "<none/><mi>" ++ l ++ "</mi>"
+mathML (IndexIdent Down cs l) = "<mi>" ++ l ++ "</mi><none/>"
 
 console :: Component -> String
 console StartOp      = ""
@@ -131,8 +137,9 @@ console EndUp      = ""
 console EndDown    = ""
 console StartNumber  = ""
 console EndNumber    = ""
-console (TensorIdent cs l) = l
-console (IndexIdent cs l) = l
+console (TensorIdent cs l) = niceLabelConsole l
+console (IndexIdent Up cs l) = "^" ++ niceLabelConsole l
+console (IndexIdent Down cs l) = "." ++ niceLabelConsole l
 
 instance Printable Component where
     printML = mathML
@@ -228,8 +235,10 @@ renderCalc' prec mode x = case x of
     _ -> undefined
 
 renderIndex :: PrintMode -> (String, Index) -> String
-renderIndex mode (label, Index{indexValence=Up}) = (print mode IndexPH) ++ (print mode (IndexIdent label label))
-renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent label label)) ++ (print mode IndexPH)
+renderIndex mode (label, Index{indexValence=Up}) = (print mode (IndexIdent Up label label))
+renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent Down label label))
+-- renderIndex mode (label, Index{indexValence=Up}) = (print mode IndexPH) ++ (print mode (IndexIdent label label))
+-- renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent label label)) ++ (print mode IndexPH)
 
 numFreeSlots :: Calc -> Int
 numFreeSlots x = case x of

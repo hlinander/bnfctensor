@@ -1,5 +1,9 @@
 {-# LANGUAGE TemplateHaskell #-}
 
+module Test (
+    module U
+) where
+
 import Test.QuickCheck
 import Test.QuickCheck.Arbitrary.Generic
 import Control.Monad
@@ -7,14 +11,36 @@ import Core
 import Math.Combinat.Permutations
 import Data.Char
 import Data.Maybe
+import qualified Data.Map as M
 import qualified Data.List as L
 import qualified Frontend.AbsTensor as Abs
 import RenderCalc
 import qualified Util as U
+import Debug.Trace
+import System.IO.Unsafe
+import Data.Generics.Uniplate.Direct
 
--- TODO generate nested calcs with sized
 instance Arbitrary Calc where
-    arbitrary = arbitraryCalc
+    shrink = shrinkCalc
+    arbitrary = sized foo
+        where foo 0 = oneof [ Number <$> arbitrary, arbitraryTensor, arbitrarySelfContraction ]
+              foo n = frequency [
+                (2, foo (n-1)),
+                (1, Number <$> arbitrary),
+                (2, arbitraryTensor),
+                (2, resize (n-1) arbitrarySum),
+                (4, resize (n-1) arbitraryProduct),
+                (1, resize (n-1) arbitraryContraction),
+                (2, arbitrarySelfContraction)
+               ]
+
+shrinkCalc :: Calc -> [Calc]
+shrinkCalc c = case c of
+    Prod f1 f2 -> [ Tensor "shrinked" (indexFromCalc f1 ++ indexFromCalc f2) ]
+        ++ [ Prod s1 s2 | (s1,s2) <- shrink (f1,f2) ]
+    Sum t1 t2 -> [t1,t2]
+    Op n idx calc -> [Op n idx s | s <- shrink calc]
+    _ -> []
 
 instance Arbitrary ValenceType where
     arbitrary = oneof $ map return [Up, Down]
@@ -42,12 +68,61 @@ arbitraryCalc = oneof [
     arbitraryProduct
  ]
 
+isContractible :: Calc -> Bool
+isContractible c = case map length indexGroups of
+        [] -> False
+        xs -> minimum xs >= 2
+    where indices = indexFromCalc c
+          indexGroups = map snd $ M.toList $ M.fromListWith (++) [(indexRepr i, [i]) | i <- indices]
+
+replaceIndex :: Calc -> Int -> Index -> Calc
+replaceIndex c i idx = case c of
+    Tensor n idxs -> Tensor n (U.replaceAt i idx idxs)
+    Sum s1 s2 -> Sum (replaceIndex s1 i idx) (replaceIndex s2 i idx)
+    Prod f1 f2
+        | i < n -> Prod (replaceIndex f1 i idx) f2
+        | i >= n -> Prod f1 (replaceIndex f2 (i - n) idx)
+            where n = length $ indexFromCalc f1
+    Contract i1 i2 c -> Contract i1 i2 (replaceIndex c i' idx)
+        -- | i' < i1 -> Contract i1 i2 (replaceIndex c i idx)
+        -- | i' > i1 && i' < i2 -> Contract i1 i2 (replaceIndex c (i+1) idx)
+        -- | i' > i2 -> Contract i1 i2 (replaceIndex c (i+2) idx)
+        where i' = indexUnderContract i1 i2 i
+    Permute perm c -> Permute perm (replaceIndex c (U.image perm i) idx)
+    Op n idxs c'
+        | i < length idxs -> Op n (U.replaceAt i idx idxs) $ c'
+        | i >= length idxs -> Op n idxs $ replaceIndex c' (i - (length idxs)) idx
+    _ -> c
+
+indexUnderContract :: Int -> Int -> Int -> Int
+indexUnderContract i1 i2 i
+    | i2 > i1 = (U.deleteAt i1 $ U.deleteAt i2 [0..]) !! i
+    | i2 < i1 = (U.deleteAt i2 $ U.deleteAt i1 [0..]) !! i
+
+prop_contract :: Int -> Int -> Int -> Property
+prop_contract i1 i2 i = i1 >= 0    && i2 >= 0
+    && i >= 0
+    ==> 1 == 1
+
+prop_replaceIndex :: Calc -> Int -> Index -> Property
+prop_replaceIndex c i idx = length (indexFromCalc c) > i && i >= 0
+        ==> counterexample (renderConsole c ++ " -> " ++ renderConsole replaced) $ (indexFromCalc replaced) !! i == idx
+        where replaced = replaceIndex c i idx
+
+arbitraryContraction = suchThat arbitrary (\c -> length (indexFromCalc c) > 2) >>= arbitraryContract
+
 arbitraryContract :: Calc -> Gen Calc
 arbitraryContract c = do
-    let n = length $ indexFromCalc c
-    indices <- shuffle [0..(n-1)]
-    let [i1, i2] = L.sort $ take 2 indices
-    return $ Contract i1 i2 c
+    let indices = indexFromCalc c
+    let n = length indices
+    i1 <- choose (0, n-1)
+    i2 <- suchThat (choose (0, n-1)) (/= i1)
+    let roff = replaceIndex c i2 (flipIndex (indices !! i1))
+    return $ Contract i1 i2 roff
+
+flipIndex i@(Index r v) = i { indexValence = f v }
+  where f Up = Down
+        f Down = Up
 
 arbitraryPermute :: Calc -> Gen Calc
 arbitraryPermute c = do
@@ -61,34 +136,29 @@ arbitrarySelfContraction = do
     t <- suchThat arbitraryTensor (\(Tensor _ xs) -> (length xs) >= 2)
     case t of
         (Tensor n ids) -> do
-            cid <- (arbitrary :: Gen Index)
+            cid <- arbitrary
             slot1 <- choose (0, length ids - 1)
             slot2 <- suchThat (choose (0, length ids - 1)) (not . (==) slot1)
             let cids = if slot1 > slot2
-                then (U.insertAt slot1 cid . insertAt slot2 (flipIndex cid)) ids
-                else (U.insertAt slot2 cid . insertAt slot1 (flipIndex cid)) ids
-            return $ (Contract slot1 slot2) $ Tensor n cids
+                then (U.insertAt slot1 cid . U.insertAt slot2 (flipIndex cid)) ids
+                else (U.insertAt slot2 cid . U.insertAt slot1 (flipIndex cid)) ids
+            let [s1, s2] = L.sort [slot1, slot2]
+            return $ (Contract s1 s2) $ Tensor n cids
                 where flipIndex i@(Index r v) = i { indexValence = flipValence v }
                       flipValence Up = Down
                       flipValence Down = Up
         _ -> undefined
 
--- inserts an element at position idx counted from 0
-insertAt :: Int -> a -> [a] -> [a]
-insertAt idx x xs = lh ++ x:rh
-    where (lh, rh) = splitAt idx xs
-
-
 -- TODO: generate linearly dependent but not identical vector spaces
 arbitrarySum :: Gen Calc
 arbitrarySum = do
-    tensor <- arbitraryTensor
-    return $ tensor |+| tensor
+    calc <- arbitrary 
+    return $ calc |+| calc
 
 arbitraryProduct :: Gen Calc
 arbitraryProduct = do
-    tensor1 <- oneof [arbitraryTensor, arbitrarySelfContraction]
-    tensor2 <- oneof [arbitraryTensor, arbitrarySelfContraction]
+    tensor1 <- arbitrary
+    tensor2 <- arbitrary
     return $ tensor1 |*| tensor2
 
 -- only generates identity permutations
@@ -102,17 +172,15 @@ arbitraryTensor = do
 arbitraryIdentifier :: Gen String
 arbitraryIdentifier = vectorOf 2 (elements ['a'..'z']) >>= \(x:xs) -> return $ toUpper x : xs
 
-arbitraryContractable :: Gen Calc
-arbitraryContractable = suchThat arbitraryCalc (\c -> (length $ indexFromCalc c) > 2)
+prop_indexFromCalcUnderContraction :: Calc -> Property
+prop_indexFromCalcUnderContraction c = length (indexFromCalc c) > 2 ==>
+    forAll (arbitraryContract c) invariant
+        where invariant c' = length (indexFromCalc c') == (length (indexFromCalc c)) - 2
 
-prop_contractFreeIndices :: Property
-prop_contractFreeIndices = forAll arbitraryContractable $ \calc -> do
-    contracted <- arbitraryContract calc
-    let res = length (indexFromCalc contracted) == (length (indexFromCalc calc)) - 2
-    return $ res
-
-prop_commuteContractPermute :: Property
-prop_commuteContractPermute = forAll arbitraryContractable $ \calc -> do
+-- NEEDS HELP
+prop_commuteContractPermute :: Calc -> Property
+prop_commuteContractPermute calc = length (indexFromCalc calc) > 2
+    ==> do
     permuted <- arbitraryPermute calc
     contracted <- arbitraryContract permuted
     let r1 = renderConsole contracted
@@ -120,7 +188,15 @@ prop_commuteContractPermute = forAll arbitraryContractable $ \calc -> do
     return $ counterexample (r1 ++ " /= " ++ r2) (r1 == r2)
 
 prop_renderCalc :: Calc -> Bool
-prop_renderCalc calc = (length (renderConsole calc) > 0)
+prop_renderCalc calc = not (null (renderConsole calc))
+
+prop_preEliminateMetrics :: Calc -> Property
+prop_preEliminateMetrics c = (length (indexFromCalc c) > 2)
+    ==> forAll (arbitraryContract c) $ \calc -> do
+        let condition = validCalc calc ==> validCalc (preEliminateMetrics calc)
+        counterexample (renderConsole calc) condition
+
+debug calc = unsafePerformIO $ putStrLn (renderConsole calc) >> return calc
 
 instance Arbitrary Abs.Expr where
     arbitrary = genericArbitrary
@@ -131,7 +207,17 @@ instance Arbitrary Abs.Label where
 instance Arbitrary Abs.Index where
     arbitrary = genericArbitrary
 
+prop_insertAt :: (Eq a) => Int -> a -> [a] -> Property
+prop_insertAt idx x list = idx >=0 && idx <= length list
+    ==> (U.insertAt idx x list) !! idx == x
+
+prop_image :: Int -> Property
+prop_image n = n >= 0 ==> forAll (shuffle [1..(n+1)*2]) assertion
+    where assertion l = (permuteList (perm l) testList) !! (U.image (perm l) n) == testList !! n
+          perm = toPermutation
+          testList = [0..]
+
 return []
-runTests = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 1000 })
+runTests = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 100 })
 
 main = runTests

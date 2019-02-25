@@ -41,10 +41,10 @@ type IndexType = ReprType
 data GroupType = GroupType {
     groupName :: String,
     groupDims :: [Int]
-} deriving (Eq, Ord)
+} deriving (Show, Eq, Ord)
 
-instance Show GroupType where
-    showsPrec i g = showString (groupName g) . showList (groupDims g)
+-- instance Show GroupType where
+--     showsPrec i g = showString (groupName g) . showList (groupDims g)
 
 -- createRepr :: GroupType -> Int -> ReprType
 -- createRepr = flip ReprType
@@ -52,37 +52,37 @@ instance Show GroupType where
 data TensorType = TensorType {
     tensorName :: String,
     tensorIndices :: [IndexType]
-} deriving (Eq, Ord)
+} deriving (Show, Eq, Ord)
 
-instance Show TensorType where
-    showsPrec i t = showString (tensorName t)
-        . showString " { "
-        . showList (tensorIndices t)
-        . showString " }"
+--instance Show TensorType where
+--    showsPrec i t = showString (tensorName t)
+--        . showString " { "
+--        . showList (tensorIndices t)
+--        . showString " }"
 
 data OpType = OpType {
     opName :: String,
     opIndices :: [IndexType]
-}
+} deriving Show
 
-instance Show OpType where
-    showsPrec i t = showString (opName t)
-        . showString " { "
-        . showList (opIndices t)
-        . showString " }"
+-- instance Show OpType where
+--     showsPrec i t = showString (opName t)
+--         . showString " { "
+--         . showList (opIndices t)
+--         . showString " }"
 
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
     --reprMetric :: Maybe TensorType
-} deriving (Eq, Ord)
+} deriving (Show, Eq, Ord)
 
-instance Show ReprType where
-    showsPrec i repr =
-        (showParen True
-        $ shows (reprDim repr))
-        . showString ": "
-        . shows (reprGroup repr)
+-- instance Show ReprType where
+--     showsPrec i repr =
+--         (showParen True
+--         $ shows (reprDim repr))
+--         . showString ": "
+--         . shows (reprGroup repr)
 
 data FunctionType = FunctionType {
     funcName :: String,
@@ -428,10 +428,6 @@ reduceNestedPairNew ((l1, index1, i1), (l2, index2, i2)) (oldPos, newContraction
            (oldPos', _) = popAt spos2 oldPos
            (newPos, _) = popAt spos1 oldPos'
 
-unsafeMaybe :: Maybe a -> a
-unsafeMaybe (Just x) = x
-unsafeMaybe _ = undefined
-
 selfContractedIndexPairs :: [(Abs.Index, Index)] -> [ContractPairNew]
 selfContractedIndexPairs idxs = nestedPairs
     where indexSlotPositions = zip idxs [0..length idxs]
@@ -478,9 +474,13 @@ execute "elmetrics" = fixPoint eliminateMetrics
 execute _ = id
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
-fixPoint f c
-    | c' == c = c
-    | otherwise = fixPoint f c'
+fixPoint = fixPoint' 100
+
+fixPoint' :: Int -> (Calc -> Calc) -> Calc -> Calc
+fixPoint' n f c = case n of
+    0 -> c
+    n | c' == c -> c
+      | otherwise -> fixPoint' (n-1) f c'
     where c' = f c
 
 showCalc :: Calc -> Calc
@@ -505,7 +505,13 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
-simplify = fixPoint commuteContractPermute . simplifyContract . simplifyPermutations . simplifyTerms . simplifyFactors . sortCalc
+simplify = fixPoint eliminateMetrics
+    . commuteContractPermute
+    . simplifyContract
+    . simplifyPermutations
+    . simplifyTerms
+    . simplifyFactors
+    . sortCalc
 
 sortCalc :: Calc -> Calc
 sortCalc = transform f
@@ -575,12 +581,37 @@ eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Tensor _ idx)))
     where pFix = concatPermutations cycle rest
           cycle = cycleLeft $ (i2 - 2) + 1
           rest = identity $ (length idx) - ((i2 - 2) + 1)
+eliminateMetrics' (Contract i1 i2 (Prod t@(Tensor _ idx) (Tensor "g" [_, ti])))
+  | i2 == (length idx) && i1 < (length idx) = Permute pFix $ setValence t i1 (indexValence ti)
+    where pFix = concatPermutations rest cycle
+          cycle = cycleLeft $ (length idx) - i1
+          rest = identity $ i1
+eliminateMetrics' (Contract i1 i2 (Prod t@(Tensor _ idx) (Tensor "g" [ti, _])))
+  | i2 == (length idx) + 1 && i1 < (length idx) = Permute pFix $ setValence t i1 (indexValence ti)
+    where pFix = concatPermutations rest cycle
+          cycle = cycleLeft $ (length idx) - i1
+          rest = identity $ i1
 eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Op _ _ _)))
   | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
     where pFix = concatPermutations cycle rest
           cycle = cycleLeft $ (i2 - 2) + 1
           rest = identity $ (length (indexFromCalc t)) - ((i2 - 2) + 1)
 eliminateMetrics' x = x
+
+preEliminateMetrics :: Calc -> Calc
+preEliminateMetrics = transform (preEliminateMetrics12 . preEliminateMetrics23)
+
+preEliminateMetrics12 (Contract i1 i2 (Prod f1 (Prod f2 f3))) | i1 < n1 && i2 >= n1 && i2 < n1 + n2 =
+    Prod (Contract i1 i2 (Prod f1 f2)) f3
+  where n1 = length $ indexFromCalc f1
+        n2 = length $ indexFromCalc f2
+preEliminateMetrics12 x = x
+
+preEliminateMetrics23 (Contract i1 i2 (Prod f1 (Prod f2 f3))) | i1 >= n1 && i1 < n1 + n2 && i2 >= n1 + n2 =
+    Prod f1 (Contract (i1 - n1) (i2 - n1) (Prod f2 f3))
+  where n1 = length $ indexFromCalc f1
+        n2 = length $ indexFromCalc f2
+preEliminateMetrics23 x = x
 
 collectTerms' :: Calc -> Calc
 collectTerms' (Sum t1 t2) | t1 == t2 = Prod (Number 2) t1
@@ -603,6 +634,21 @@ commuteContractPermute' (Contract i1 i2 (Permute perm c)) = if permutationSize n
           i2' = fromJust $ elemIndex i2 (permuteList perm list)
           [i1'', i2''] = sort [i1', i2'] :: [Int]
 commuteContractPermute' x = x
+
+validCalc :: Calc -> Bool
+validCalc x = case x of
+  Permute p c -> (permutationSize p == length (indexFromCalc c)) && validCalc c
+  Contract i1 i2 c -> inRange i1 0 (n - 1)
+                   && inRange i2 0 (n - 1)
+                   -- && (indexRepr (indices!!i1) == indexRepr (indices!!i2))
+                   && validCalc c
+    where inRange i min max = (i >= min) && (i <= max)
+          indices = indexFromCalc c
+          n = length indices
+  Prod f1 f2 -> validCalc f1 && validCalc f2
+  Sum t1 t2 -> validCalc t1 && validCalc t2
+  Op _ _ c -> validCalc c
+  _ -> True
 
 -- a * a * a -> a^3
 collectFactors :: Abs.Expr -> Abs.Expr
