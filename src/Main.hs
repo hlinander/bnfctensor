@@ -32,10 +32,11 @@ import Core (
     TensorType(..),
     FunctionType(..),
     OpType(..),
-    calcFromExpr,
     tensorTypeFromCalc,
     emptyBook
  )
+
+import CalcFromExpr (calcFromExpr)
 
 lambdaPrompt = "λ> "
 evalPrefix = "\t"

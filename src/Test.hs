@@ -4,21 +4,20 @@ module Test (
     module U
 ) where
 
+import Debug.Trace
+import System.IO.Unsafe
 import Test.QuickCheck
 import Test.QuickCheck.Arbitrary.Generic
-import Control.Monad
-import Core
 import Math.Combinat.Permutations
 import Data.Char
-import Data.Maybe
 import qualified Data.Map as M
 import qualified Data.List as L
+
+import Core
+import Transform
 import qualified Frontend.AbsTensor as Abs
 import RenderCalc
 import qualified Util as U
-import Debug.Trace
-import System.IO.Unsafe
-import Data.Generics.Uniplate.Direct
 
 instance Arbitrary Calc where
     shrink = shrinkCalc
@@ -75,29 +74,6 @@ isContractible c = case map length indexGroups of
     where indices = indexFromCalc c
           indexGroups = map snd $ M.toList $ M.fromListWith (++) [(indexRepr i, [i]) | i <- indices]
 
-replaceIndex :: Calc -> Int -> Index -> Calc
-replaceIndex c i idx = case c of
-    Tensor n idxs -> Tensor n (U.replaceAt i idx idxs)
-    Sum s1 s2 -> Sum (replaceIndex s1 i idx) (replaceIndex s2 i idx)
-    Prod f1 f2
-        | i < n -> Prod (replaceIndex f1 i idx) f2
-        | i >= n -> Prod f1 (replaceIndex f2 (i - n) idx)
-            where n = length $ indexFromCalc f1
-    Contract i1 i2 c -> Contract i1 i2 (replaceIndex c i' idx)
-        -- | i' < i1 -> Contract i1 i2 (replaceIndex c i idx)
-        -- | i' > i1 && i' < i2 -> Contract i1 i2 (replaceIndex c (i+1) idx)
-        -- | i' > i2 -> Contract i1 i2 (replaceIndex c (i+2) idx)
-        where i' = indexUnderContract i1 i2 i
-    Permute perm c -> Permute perm (replaceIndex c (U.image perm i) idx)
-    Op n idxs c'
-        | i < length idxs -> Op n (U.replaceAt i idx idxs) $ c'
-        | i >= length idxs -> Op n idxs $ replaceIndex c' (i - (length idxs)) idx
-    _ -> c
-
-indexUnderContract :: Int -> Int -> Int -> Int
-indexUnderContract i1 i2 i
-    | i2 > i1 = (U.deleteAt i1 $ U.deleteAt i2 [0..]) !! i
-    | i2 < i1 = (U.deleteAt i2 $ U.deleteAt i1 [0..]) !! i
 
 prop_contract :: Int -> Int -> Int -> Property
 prop_contract i1 i2 i = i1 >= 0    && i2 >= 0

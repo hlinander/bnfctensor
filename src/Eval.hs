@@ -11,6 +11,7 @@ import Core
 import RenderCalc
 import Frontend.AbsTensor
 import Frontend.PrintTensor
+import CalcFromExpr (calcFromExpr)
 
 import Prelude hiding ( printCalc )
 

@@ -20,12 +20,13 @@ import Core (
     TensorType(..),
     OpType(..),
     Calc,
-    calcFromExpr,
     emptyBook,
     tensorTypeFromCalc,
     lookupTensor,
     nextAnonymous
  )
+
+import CalcFromExpr (calcFromExpr)
 
 import Tensor ( freeIndices,
                 usedIndices )

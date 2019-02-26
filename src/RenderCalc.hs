@@ -6,10 +6,12 @@ module RenderCalc (
     renderMathML,
     Printable(..),
     PrintMode(..),
-    printCalc
+    printCalc,
+    renderTreeRepl
 ) where
 
 import Data.Ratio
+import Data.Tree
 import qualified Math.Combinat.Permutations as P
 
 import qualified Control.Monad.Reader as R
@@ -19,6 +21,7 @@ import Core
 import Util
 import Prelude hiding ( print )
 import Frontend.AbsTensor ( DocString(..) )
+import System.IO.Unsafe
 
 data PrintMode = MathML | Console
 
@@ -250,3 +253,21 @@ numFreeSlots x = case x of
     Op _ idxs c -> (length idxs) + numFreeSlots c
     _ -> 0
 
+renderTree :: Calc -> String
+renderTree = drawTree . calcToTree
+
+-- renderTreeHTML :: Calc -> String
+-- renderTreeHTML = (htmlTree Nothing) . calcToTree
+
+calcToTree :: Calc -> Tree String
+calcToTree (Sum t1 t2) = Node "(+)" [calcToTree t1, calcToTree t2]
+calcToTree (Prod f1 f2) = Node "(*)" [calcToTree f1, calcToTree f2]
+calcToTree (Permute p c) = Node (show p) [calcToTree c]
+calcToTree (Contract i1 i2 c) = Node ("Contract " ++ show i1 ++ " <-> " ++ show i2) [calcToTree c]
+calcToTree (Op l idx c) = Node (l ++ "[" ++ show idx ++ "]") [calcToTree c]
+calcToTree t@(Tensor _ _) = Node (renderConsole t) []
+calcToTree x = Node (show x) []
+
+renderTreeRepl :: Calc -> Calc
+renderTreeRepl c = unsafePerformIO $ do
+  putStrLn (renderTree c) >> return c
