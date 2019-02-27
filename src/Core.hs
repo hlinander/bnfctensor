@@ -12,21 +12,16 @@ import qualified Frontend.AbsTensor as Abs (
 
 import System.IO.Unsafe
 
-import Control.Monad.Reader
 import Control.Monad.Except
 
-import Data.Bifunctor
-import Data.Maybe
 import Data.List
-import Data.Ratio
-import Data.Foldable
+import Data.Maybe
 
-import Data.Generics.Uniplate.Direct
 import Math.Combinat.Permutations
+import Data.Generics.Uniplate.Direct
 import Util
 
 import qualified Data.Map as M
-import qualified Tensor as T
 
 -- import Control.Lens.Plated
 -- import Data.Data.Lens
@@ -231,6 +226,9 @@ indexFromCalc x = case x of
   (Contract i1 i2 c)
       | i1 > i2 -> deleteAt i2 $ deleteAt i1 (indexFromCalc c)
   (Op n idx c) -> idx ++ indexFromCalc c
+
+nFreeIndices :: Calc -> Int
+nFreeIndices = length . indexFromCalc
 
 tensorTypeFromCalc :: String -> Calc -> TensorType
 tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)

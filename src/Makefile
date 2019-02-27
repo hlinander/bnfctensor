@@ -2,19 +2,19 @@
 
 all: tensor tensorkernel
 
-tensorkernel: Kernel.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
+tensorkernel: Kernel.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
 	ghc --make $< -o tensorkernel
 
-tensor: Main.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
+tensor: Main.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
 	ghc --make $< -o tensor
 
-test: Test.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
+test: Test.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
 	runhaskell Test.hs
 
-docker: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
+docker: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
 	docker run --rm -v $(PWD)/../:/bnfctensor -w /bnfctensor/src bnfctensor:latest make tensor
 
-docker-test: Test.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs
+docker-test: Test.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest make test
 
 docker-ghci:

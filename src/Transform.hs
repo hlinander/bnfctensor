@@ -20,6 +20,7 @@ execute "tree" = renderTreeRepl
 execute "sort" = sortCalc
 execute "collect" = fixPoint collectTerms
 execute "elmetrics" = fixPoint eliminateMetrics
+execute "elmetrics2" = fixPoint elMetrics
 execute _ = id
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -54,7 +55,7 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
-simplify = fixPoint eliminateMetrics
+simplify = fixPoint elMetrics
     . commuteContractPermute
     . simplifyContract
     . simplifyPermutations
@@ -123,6 +124,63 @@ simplifyContract' :: Calc -> Calc
 simplifyContract' (Contract i1 i2 (Sum t1 t2)) = Sum (Contract i1 i2 t1) (Contract i1 i2 t2)
 simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contract i1 i2 f)
 simplifyContract' x = x
+
+elMetrics :: Calc -> Calc
+elMetrics = transform elMetrics'
+
+elMetrics' :: Calc -> Calc
+elMetrics' calc@(Contract i1 i2 c) | i1 < i2 = case indexOnMetric c i1 of
+  Nothing -> case indexOnMetric c i2 of
+    Nothing -> calc
+    Just (index, di) -> case permutationSize perm of
+        n | n <= 1 -> removeMetric (replaceIndex c i1 index) i2
+        _ -> Permute perm $ removeMetric (replaceIndex c i1 index) i2
+      where perm = (id1) `concatPermutations` (traceShowId (cycleRight ncycle)) `concatPermutations` id2
+            i1' = i1 + di
+            ncycle = i2 - i1' - 1
+            id1 = identity i1'
+            id2 = identity (nFreeIndices c - 2 - ncycle - i1')
+  Just (index, di) -> case permutationSize perm of
+      n | n <= 1 -> removeMetric (replaceIndex c i2 index) i1
+      _ -> Permute perm $ removeMetric (replaceIndex c i2 index) i1
+    where perm = (id1) `concatPermutations` (traceShowId (cycleLeft ncycle)) `concatPermutations` id2
+          -- this is wrong depending on if the contraction is on the first or on the last index of the metric
+          i1' = i1 + di
+          ncycle = i2 - i1' - 1
+          id1 = identity i1'
+          id2 = identity (nFreeIndices c - 2 - ncycle - i1')
+elMetrics' x = x
+
+removeMetric :: Calc -> Int -> Calc
+removeMetric c i = case c of
+  Tensor "g" idx -> Number 1
+  Prod f1 f2
+    | i < n1 -> Prod (removeMetric f1 i) f2
+    | otherwise -> Prod f1 (removeMetric f2 (i - n1))
+    where n1 = nFreeIndices f1
+  Sum _ _ -> c
+  Permute perm pc -> c -- Permute perm (indexOnMetric pc (image perm i)
+  Contract i1 i2 cc -> c -- indexOnMetric cc (indexUnderContract i1 i2 i)
+  Op l idx oc
+    | i < length idx -> c
+    | otherwise -> Op l idx (removeMetric oc (i - length idx))
+  _ -> c
+
+
+indexOnMetric :: Calc -> Int -> Maybe (Index, Int)
+indexOnMetric c i = case c of
+  Tensor "g" idx -> listToMaybe $ deleteAt i (zip idx [(-1), 0])
+  Prod f1 f2
+    | i < n1 -> indexOnMetric f1 i
+    | otherwise -> indexOnMetric f2 (i - n1)
+    where n1 = nFreeIndices f1
+  Sum _ _ -> Nothing
+  Permute perm pc -> Nothing -- indexOnMetric pc (image perm i)
+  Contract i1 i2 cc -> Nothing -- indexOnMetric cc (indexUnderContract i1 i2 i)
+  Op _ idx oc
+    | i < length idx -> Nothing
+    | otherwise -> indexOnMetric oc (i - length idx)
+  _ -> Nothing
 
 eliminateMetrics' :: Calc -> Calc
 eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Tensor _ idx)))
