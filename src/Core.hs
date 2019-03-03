@@ -135,6 +135,20 @@ lookupCalc s bs = M.lookup s (bookCalcs bs)
 type TensorName = String
 type OpName = String
 
+-- tensor T{ a, b, c, d, e, f(4): SO(3,1) }
+--
+-- \x y -> ((* c(x,y) // T:a b x d e f) (T a b c y e f))
+--                         2 3 0 4 5 6     2 3 7 1 5 6  --
+--                         2 2 0 2 2 2     2 2 2 1 2 2  --
+--                         * (2 3 4 5 6) (2 3 7 5 6) (c)
+--                         -- T T + T T
+-- T.a.b.c T^a.e.f + T.a.b.c T.e^a.f
+-- T.b S.a + T.a S.b - Permute [2, 1] T S
+
+-- T.a.b.c.d
+
+-- \a b c d -> a.b.c + d
+
 data Calc
     = Number Rational
     | Tensor TensorName [Index]
@@ -145,6 +159,9 @@ data Calc
     | Permute Permutation Calc
     | Contract Int Int Calc
     | Op OpName [Index] Calc
+--    | Lambda Calc
+--    | App Calc Calc
+--    | Var Int
     deriving (Show, Eq, Ord)
 
 instance Uniplate Calc where

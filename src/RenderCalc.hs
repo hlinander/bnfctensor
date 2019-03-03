@@ -258,15 +258,19 @@ renderTree = drawTree . calcToTree
 
 -- renderTreeHTML :: Calc -> String
 -- renderTreeHTML = (htmlTree Nothing) . calcToTree
-
 calcToTree :: Calc -> Tree String
-calcToTree (Sum t1 t2) = Node "(+)" [calcToTree t1, calcToTree t2]
-calcToTree (Prod f1 f2) = Node "(*)" [calcToTree f1, calcToTree f2]
-calcToTree (Permute p c) = Node (show p) [calcToTree c]
-calcToTree (Contract i1 i2 c) = Node ("Contract " ++ show i1 ++ " <-> " ++ show i2) [calcToTree c]
-calcToTree (Op l idx c) = Node (l ++ "[" ++ show idx ++ "]") [calcToTree c]
-calcToTree t@(Tensor _ _) = Node (renderConsole t) []
-calcToTree x = Node (show x) []
+calcToTree c = calcToTree' c []
+
+calcToTree' :: Calc -> [Int] -> Tree String
+calcToTree' (Sum t1 t2) p = Node ("(+)" ++ showPos p) [calcToTree' t1 (p ++ [0]), calcToTree' t2 (p ++ [1])]
+calcToTree' (Prod f1 f2) p = Node ("(*)" ++ showPos p) [calcToTree' f1 (p ++ [0]), calcToTree' f2 (p ++ [1])]
+calcToTree' (Permute p c) pos = Node (show p ++ showPos pos) [calcToTree' c (pos ++ [0])]
+calcToTree' (Contract i1 i2 c) p = Node ("Contract " ++ show i1 ++ " <-> " ++ show i2 ++ showPos p) [calcToTree' c (p ++ [0])]
+calcToTree' (Op l idx c) p = Node (l ++ "[" ++ show idx ++ "]" ++ showPos p) [calcToTree' c (p ++ [0])]
+calcToTree' t@(Tensor _ _) p = Node (renderConsole t ++ showPos p) []
+calcToTree' x p = Node (show x ++ showPos p) []
+
+showPos p = " Pos: " ++ show p
 
 renderTreeRepl :: Calc -> Calc
 renderTreeRepl c = unsafePerformIO $ do

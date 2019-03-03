@@ -14,6 +14,7 @@ import Frontend.ErrM
 import Check ( analyzeBook, analyzeBookWithState )
 
 import Data.Typeable
+import Data.Foldable
 import Data.Maybe
 import Data.List as L
 import qualified Data.Text as T
@@ -59,20 +60,6 @@ putSuccess msg = putColor Green msg
 
 type ReplState = (BookState, [String])
 
--- evalExpr :: String -> BookState -> Expr -> IO BookState
--- evalExpr var bs expr = do
---     case calcFromExpr expr bs of
---       Left err -> putErr err >> return bs
---       Right calc -> putSuccess ( evalPrefix ++ renderCalc calc console ) >> return bs -- TODO maybe add ?? "\x2234 " ++
--- 
--- evalStatement :: BookState -> Stmt -> IO BookState
--- evalStatement bs stmt  = case stmt of
---     StmtAssign (Label var) expr -> putStrLn (var ++ " := " ++ printTree expr) >> putStr (var ++ " := ") >> evalExpr var bs expr
---     StmtVoid expr -> putStrLn (printTree expr) >> evalExpr "" bs expr
---     StmtFuncDef name exprs stmts -> undefined
---     td@(StmtTensorDef ts ds) -> putStrLn (printTree td) >> return bs
---     od@(StmtOpDef os ds) -> putStrLn (printTree od) >> return bs
-
 bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
     where tensors = L.map tensorName $ bookTensors bs
@@ -105,7 +92,13 @@ showTensors :: BookState -> IO ()
 showTensors bs = mapM_ showTensor $ bookTensors bs
 
 loadBook :: FilePath -> IO (BookState, String)
-loadBook f = readFile f >>= repl' emptyBook
+loadBook f = readFile f >>= return . (\s -> L.map ((++";") . T.unpack) $ L.filter (/= T.pack "") $ T.split (==';') $ T.pack s)
+                        >>= (foldlM reduce emptyBook) >>= return . flip (,) ""
+  where reduce bs s = do
+          (bs', s') <- repl' bs s
+          putStrLn s
+          putSuccess s'
+          return bs'
 
 repl :: IO ()
 repl = replRL emptyBook
@@ -127,7 +120,6 @@ replRL bs = do
           ":show groups <tensor>" -> undefined
           ":show all groups" -> undefined
           ":show all groups <name>" -> undefined
-          --":load" -> do
           ':':'l':'o':'a':'d':rest -> do
             (bs', result) <- loadBook $ T.unpack (T.strip (T.pack rest))
             putSuccess result

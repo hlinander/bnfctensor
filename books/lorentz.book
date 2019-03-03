@@ -3,16 +3,16 @@
 tensor T { a(4), b(4): SO(3, 1) };
 tensor V { a(4): SO(3, 1) };
 
-// Metric with one co- and one contravariant index is equivalent to Kronecker delta
+# Metric with one co- and one contravariant index is equivalent to Kronecker delta
 var delta = g^a.b;
 var eta = g.a.b;
 
-// Infinitesimal Lorentz transformation
+# Infinitesimal Lorentz transformation
 var L = delta^a.b + T^a.b;
 
 var V' = L^a.b V^b;
 
-// Metric should be invariant under a Lorentz transformation
+# Metric should be invariant under a Lorentz transformation
 var zero1 = L.a^m L.b^n eta.m.n - eta.a.b;
 var zero2 = distribute!(simp!(zero1));
 var zero3 = distribute!(simp!(zero2));

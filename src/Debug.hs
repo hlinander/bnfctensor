@@ -5,6 +5,7 @@ import Frontend.ErrM
 import Main
 import Core
 import Control.Monad.Reader
+import CalcFromExpr
 -- import GHC.Real (:%)
 
 
@@ -16,7 +17,9 @@ debugParse :: String -> Expr
 debugParse = getExpr . parse
 
 debugCalc :: String -> Calc
-debugCalc string = runReader (calcFromExpr (debugParse string)) (BookState [] [])
+debugCalc string = case calcFromExpr (debugParse string) emptyBook of
+    Left foo -> undefined
+    Right bar -> bar
 
 -- debugCalcReal :: Calc -> String
 

@@ -1,6 +1,7 @@
 tensor
 tensorkernel
 *.hi
+*.dyn*
 *.o
 *.x
 *.y

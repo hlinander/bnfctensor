@@ -46,7 +46,7 @@ calcFromExpr' x = case x of
     let freeSlots = T.freeIndexPos x
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
     calc <- case maybeCalc of
-      Just storedCalc -> liftEither $ newCalc
+      Just storedCalc -> liftEither newCalc
           where storedIndices = indexFromCalc storedCalc
                 valences = map indexValence storedIndices
                 requestedValences = map absIndexValence absIdx
@@ -66,15 +66,11 @@ calcFromExpr' x = case x of
     let indexTypes = tensorIndices tensorType
     let freeSlots = T.freeIndexPos x
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
-    --let calc = maybeCalc
     let contractedCalc = contractNew contractions maybeCalc
     let res = if isIdentityPermutation perm
                 then contractedCalc
                 else Permute perm contractedCalc
     return (res, sortedIdxAndLabels)
-    --case maybeCalc of
-    --  Nothing -> lift Nothing
-    --  Just storedCalc -> do
   Abs.Op (Abs.Label l) absIdx expr -> do
     (calc, idx) <- calcFromExpr' expr
     opType <- asks (lookupOp' ("Undefined operator '" ++ l ++ "'") l) >>= liftEither
@@ -99,9 +95,12 @@ calcFromExpr' x = case x of
                 then (contractNew contracted $ calc1 |*| calc2, f')
                 else (Permute perm $ contractNew contracted $ calc1 |*| calc2, f')
     return $ res
-  Abs.Func (Abs.Label name) (expr:[]) -> do
-    (calc, idx) <- calcFromExpr' expr
-    return $ (execute name calc, idx)
+  -- Abs.Func (Abs.Label name) (expr:[]) -> do
+  --   (calc, idx) <- calcFromExpr' expr
+  --   return $ (execute name [calc], idx)
+  Abs.Func (Abs.Label name) args -> do
+    argsAndIdxs <- mapM calcFromExpr' args
+    return $ (execute name (map fst argsAndIdxs), snd $ head argsAndIdxs)
 
   x -> (return $ (traceShow ("vinsten: " ++ show x) (Number 1), []))
 
@@ -149,9 +148,6 @@ type ContractPairNew = (IndexSlotNew, IndexSlotNew)
 
 labelEqual :: ContractPairNew -> Bool
 labelEqual ((l1, _, _),(l2, _, _)) = l1 == l2
-
--- labelEqual :: ContractPair -> Bool
--- labelEqual ((l1, _),(l2, _)) = indexLabel l1 == indexLabel l2
 
 contractedPairsNew:: [(String, Index)] -> [(String, Index)] -> [ContractPairNew]
 contractedPairsNew free1 free2 = nestedPairs

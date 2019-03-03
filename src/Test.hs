@@ -28,7 +28,7 @@ instance Arbitrary Calc where
                 (1, Number <$> arbitrary),
                 (2, arbitraryTensor),
                 (2, resize (n-1) arbitrarySum),
-                (4, resize (n-1) arbitraryProduct),
+                (2, resize (n-1) arbitraryProduct),
                 (1, resize (n-1) arbitraryContraction),
                 (2, arbitrarySelfContraction)
                ]
@@ -173,6 +173,9 @@ prop_preEliminateMetrics c = (length (indexFromCalc c) > 2)
         counterexample (renderConsole calc) condition
 
 debug calc = unsafePerformIO $ putStrLn (renderConsole calc) >> return calc
+
+instance Arbitrary Abs.LabelList where
+    arbitrary = genericArbitrary
 
 instance Arbitrary Abs.Expr where
     arbitrary = genericArbitrary

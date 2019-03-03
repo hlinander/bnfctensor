@@ -67,15 +67,19 @@ coercions SymExpr 1 ;
 -- Tensor expressions
 -----------------------------------------------------------------------
 
-Subst. Expr  ::= Expr "|" Expr "->" Expr1 ;
-Add.   Expr1 ::= Expr1 "+" Expr2 ;
-Sub.   Expr1 ::= Expr1 "-" Expr2 ;
-Neg.   Expr2 ::= "-" Expr2 ;           -- shift/reduce conflict with Sub
-Mul.   Expr2 ::= Expr2 Expr3 ;
-Div.   Expr2 ::= Expr2 "/" Expr3 ;
-Op.    Expr4 ::= Label [Index] "~" "(" Expr ")" ;
-Func.  Expr5 ::= Label "!" "(" [Expr] ")" ;
+--Subst. Expr  ::= Expr "|" Expr "=====" Expr1 ;
+Add.    Expr1 ::= Expr1 "+" Expr2 ;
+Sub.    Expr1 ::= Expr1 "-" Expr2 ;
+Neg.    Expr2 ::= "-" Expr2 ;           -- shift/reduce conflict with Sub
+Mul.    Expr2 ::= Expr2 Expr3 ;
+Div.    Expr2 ::= Expr2 "/" Expr3 ;
+Op.     Expr4 ::= Label [Index] "~" "(" Expr ")" ;
+Func.   Expr5 ::= Label "!" "(" [Expr] ")" ;
+App.    Expr5 ::= Expr5 "//" Expr ;
+Lambda. Expr6 ::= "\\" LabelList "->" Expr ;
 -- PostFunc.  Expr5 ::= "(" Expr ")" ">>" Label;
+
+-- (((\x,y -> x) s) t)
 
 -- D@func!(vinst)
 -- D A A @vinst
@@ -90,6 +94,8 @@ Func.  Expr5 ::= Label "!" "(" [Expr] ")" ;
 -- Indexed. Expr3 ::= Expr3 [Index]
 Tensor.  Expr6 ::= Label [Index] ;
 Anon.    Expr6 ::= "$" Integer [Index] ;
+
+-- - ($)
 
 (:[]). [Expr6] ::= Expr6 ;
 (:).   [Expr6] ::= Expr6 "," [Expr6] ;
