@@ -3,10 +3,13 @@ module Transform where
 import Test.QuickCheck
 
 import Math.Combinat.Permutations
+
 import Data.Generics.Uniplate.Direct
 import Data.Maybe
 import Data.List
 import Data.Ratio
+import Control.Monad.Reader
+
 import Debug.Trace
 
 import Core
@@ -23,8 +26,6 @@ execute "tree" (c:[]) = renderTreeRepl c
 execute "sort" (c:[]) = sortCalc c
 execute "sumsort" (c:[]) = sortSum c
 execute "collect" (c:[]) = fixPoint collectTerms c
-execute "elmetrics" (c:[]) = fixPoint eliminateMetrics c
-execute "elmetrics2" (c:[]) = fixPoint elMetrics c
 execute "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
@@ -62,7 +63,7 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
-simplify = fixPoint elMetrics
+simplify = fixPoint eliminateMetrics
     . commuteContractPermute
     . simplifyContract
     . simplifyPermutations
@@ -140,9 +141,6 @@ simplifyContract = transform simplifyContract'
 commuteContractPermute :: Calc -> Calc
 commuteContractPermute = transform commuteContractPermute'
 
-eliminateMetrics :: Calc -> Calc
-eliminateMetrics = transform eliminateMetrics'
-
 simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
 simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
@@ -165,31 +163,31 @@ simplifyContract' (Contract i1 i2 (Sum t1 t2)) = Sum (Contract i1 i2 t1) (Contra
 simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contract i1 i2 f)
 simplifyContract' x = x
 
-elMetrics :: Calc -> Calc
-elMetrics = transform elMetrics'
+-- g.[a d]T^[a b c] = T.d^[b c]
+--    ^      ^
+-- Contract 0 2 => removeMetric 0 (replaceIndex 2 .d)
 
-elMetrics' :: Calc -> Calc
-elMetrics' calc@(Contract i1 i2 c) | i1 < i2 = case indexOnMetric c i1 of
-  Nothing -> case indexOnMetric c i2 of
-    Nothing -> calc
-    Just (index, di) -> case permutationSize perm of
-        n | n <= 1 -> removeMetric (replaceIndex c i1 index) i2
-        _ -> Permute perm $ removeMetric (replaceIndex c i1 index) i2
-      where perm = (id1) `concatPermutations` (cycleRight ncycle) `concatPermutations` id2
-            i1' = i1 + (di + 1)
-            ncycle = i2 - i1' - 1
-            id1 = identity i1'
-            id2 = identity (nFreeIndices c - 2 - ncycle - i1')
-  Just (index, di) -> case permutationSize perm of
-      n | n <= 1 -> removeMetric (replaceIndex c i2 index) i1
-      _ -> Permute perm $ removeMetric (replaceIndex c i2 index) i1
-    where perm = (id1) `concatPermutations` (cycleLeft ncycle) `concatPermutations` id2
-          -- this is wrong depending on if the contraction is on the first or on the last index of the metric
-          i1' = i1 + di
-          ncycle = i2 - i1' - 1
-          id1 = identity i1'
-          id2 = identity (nFreeIndices c - 2 - ncycle - i1')
-elMetrics' x = x
+-- g.[b d]T^[a b c] = T^a.d^c
+--    ^        ^
+-- id_1 + (2 1)
+-- Contract 0 2 => Permute [1 3 2] $ removeMetric 0 (replaceIndex 3 .d)
+-- Implement the permutation by performing the same modifications in a numbered
+-- list and reading of the permutation as the sorting to canonical ordering.
+eliminateMetrics :: Calc -> Calc
+eliminateMetrics = transform f
+  where f calc = case calc of
+                  Contract i1 i2 c
+                    | i1 < i2 -> case indexOnMetric c i1 of
+                                  Nothing -> case indexOnMetric c i2 of
+                                    Nothing -> calc
+                                    Just (index, oim) -> eliminateOneMetric c i2 oim i1 index
+                                  Just (index, oim) -> eliminateOneMetric c i1 oim i2 index
+                  x -> x
+
+eliminateOneMetric c im oim it index = Permute perm $ removeMetric (replaceIndex c it index) im
+  where perm = sortingPermutationAsc posList
+        [r1, r2] = sort [im, oim]
+        posList = deleteAt r1 $ deleteAt r2 $ replaceAt it (oim) [0..(nFreeIndices c - 1)]
 
 removeMetric :: Calc -> Int -> Calc
 removeMetric c i = case c of
@@ -199,70 +197,32 @@ removeMetric c i = case c of
     | otherwise -> Prod f1 (removeMetric f2 (i - n1))
     where n1 = nFreeIndices f1
   Sum _ _ -> c
-  Permute perm pc -> c -- Permute perm (indexOnMetric pc (image perm i)
-  Contract i1 i2 cc -> c -- indexOnMetric cc (indexUnderContract i1 i2 i)
+  Permute perm pc -> c
+  Contract i1 i2 cc -> c
   Op l idx oc
     | i < length idx -> c
     | otherwise -> Op l idx (removeMetric oc (i - length idx))
   _ -> c
 
-
 indexOnMetric :: Calc -> Int -> Maybe (Index, Int)
-indexOnMetric c i = case c of
-  Tensor "g" idx -> listToMaybe $ deleteAt i (zip idx [(-1), 0])
+indexOnMetric c i = runReader (indexOnMetric' c i) i
+
+indexOnMetric' :: Calc -> Int -> Reader Int (Maybe (Index, Int))
+indexOnMetric' c i = case c of
+  Tensor "g" idx | i == 0 -> ask >>= \pos -> return $ Just $ (idx !! 1, pos + 1)
+                 | i == 1 -> ask >>= \pos -> return $ Just $ (idx !! 0, pos - 1)
   Prod f1 f2
-    | i < n1 -> indexOnMetric f1 i
-    | otherwise -> indexOnMetric f2 (i - n1)
+    | i < n1 -> indexOnMetric' f1 i
+    | otherwise -> indexOnMetric' f2 (i - n1)
     where n1 = nFreeIndices f1
-  Sum _ _ -> Nothing
-  Permute perm pc -> Nothing -- indexOnMetric pc (image perm i)
-  Contract i1 i2 cc -> Nothing -- indexOnMetric cc (indexUnderContract i1 i2 i)
+  Sum _ _ -> return $ Nothing
+  Permute perm pc -> return $ Nothing
+  Contract i1 i2 cc -> return $ Nothing
   Op _ idx oc
-    | i < length idx -> Nothing
-    | otherwise -> indexOnMetric oc (i - length idx)
-  _ -> Nothing
+    | i < length idx -> return $ Nothing
+    | otherwise -> indexOnMetric' oc (i - length idx)
+  _ -> return $ Nothing
 
-eliminateMetrics' :: Calc -> Calc
-eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Tensor _ idx)))
-  | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
-    where pFix = concatPermutations cycle rest
-          cycle = cycleLeft $ (i2 - 2) + 1
-          rest = identity $ (length idx) - ((i2 - 2) + 1)
-eliminateMetrics' (Contract i1 i2 (Prod t@(Tensor _ idx) (Tensor "g" [_, ti])))
-  | i2 == (length idx) && i1 < (length idx) = Permute pFix $ setValence t i1 (indexValence ti)
-    where pFix = concatPermutations rest cycle
-          cycle = cycleLeft $ (length idx) - i1
-          rest = identity $ i1
-eliminateMetrics' (Contract i1 i2 (Prod t@(Tensor _ idx) (Tensor "g" [ti, _])))
-  | i2 == (length idx) + 1 && i1 < (length idx) = Permute pFix $ setValence t i1 (indexValence ti)
-    where pFix = concatPermutations rest cycle
-          cycle = cycleLeft $ (length idx) - i1
-          rest = identity $ i1
-eliminateMetrics' (Contract i1 i2 (Prod (Tensor "g" [ti1, _]) t@(Op _ _ _)))
-  | i2 > 1 && 1 >= i1 = Permute pFix $ setValence t (i2 - 2) (indexValence ti1)
-    where pFix = concatPermutations cycle rest
-          cycle = cycleLeft $ (i2 - 2) + 1
-          rest = identity $ (length (indexFromCalc t)) - ((i2 - 2) + 1)
-eliminateMetrics' x = x
-
-preEliminateMetrics :: Calc -> Calc
-preEliminateMetrics = transform (preEliminateMetrics12 . preEliminateMetrics23)
-
-preEliminateMetrics12 (Contract i1 i2 (Prod f1 (Prod f2 f3))) | i1 < n1 && i2 >= n1 && i2 < n1 + n2 =
-    Prod (Contract i1 i2 (Prod f1 f2)) f3
-  where n1 = length $ indexFromCalc f1
-        n2 = length $ indexFromCalc f2
-preEliminateMetrics12 x = x
-
-preEliminateMetrics23 (Contract i1 i2 (Prod f1 (Prod f2 f3))) | i1 >= n1 && i1 < n1 + n2 && i2 >= n1 + n2 =
-    Prod f1 (Contract (i1 - n1) (i2 - n1) (Prod f2 f3))
-  where n1 = length $ indexFromCalc f1
-        n2 = length $ indexFromCalc f2
-preEliminateMetrics23 x = x
-
--- collectTerms' :: Calc -> Calc
--- collectTerms' (Sum t1 t2) | t1 == t2 = Prod (Number 2) t1
--- collectTerms' x = x
 
 -- Contract 1 3 (Permute [0 1 2 3])
 -- Contract i1 i2 @ Permute p list = Permute p' @ Contract i1' i2' list
