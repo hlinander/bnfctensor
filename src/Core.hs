@@ -224,6 +224,22 @@ changeValence bs c i = do
     let perm = concatPermutations cycle rest
     return $ Permute perm contracted
 
+switchValence :: BookState -> Calc -> Int -> Either String Calc
+switchValence bs c i = do
+    let indices = indexFromCalc c
+    let index = indices!!i
+    let r = indexRepr index
+    let valence = indexValence index
+    let targetValence = otherValence valence
+    metric <- lookupMetric' ("No metric for representation " ++ (show r)) r bs
+    let newIndex = Index r valence
+    let newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| (setValence c i targetValence)
+    let contracted = Contract 1 (i+2) newCalc
+    let cycle = cycleLeft (i + 1)
+    let rest = identity $ (length indices) - (i + 1)
+    let perm = concatPermutations cycle rest
+    return $ Permute perm contracted
+
 otherValence :: ValenceType -> ValenceType
 otherValence Up = Down
 otherValence Down = Up

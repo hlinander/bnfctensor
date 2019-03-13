@@ -172,7 +172,6 @@ prop_preEliminateMetrics c = (length (indexFromCalc c) > 2)
         let condition = validCalc calc ==> validCalc (preEliminateMetrics calc)
         counterexample (renderConsole calc) condition
 
-debug calc = unsafePerformIO $ putStrLn (renderConsole calc) >> return calc
 
 instance Arbitrary Abs.LabelList where
     arbitrary = genericArbitrary

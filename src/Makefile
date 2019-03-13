@@ -1,27 +1,45 @@
-.PHONY: all clean docker-ghci docker docker-ghci-debug docker-test test
+.PHONY: all clean docker-ghci docker docker-ghci-debug docker-test test tensor tensorkernel xperm
 
-all: tensor tensorkernel
+LIBDIR = ../canonicalize
+LDOPTS = -lstdc++ -lcanonicalize -L$(LIBDIR)
 
-tensorkernel: Kernel.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
-	ghc --make $< -o tensorkernel
+all: xperm tensor tensorkernel # libcanonicalize.so
 
-tensor: Main.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
-	ghc --make $< -o tensor
+xperm: external/xperm_new.cc external/xperm_new.h
+	#g++ external/xperm_new.cc -fPIC -shared -o external/libxperm.so
+	g++ -c external/xperm_new.cc -o external/libxperm.o
+	ar crv external/libxperm.a external/libxperm.o
 
-test: Test.hs Eval.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
+HSMODULES = Eval.hs \
+	    Core.hs \
+	    Tensor.hs \
+	    Check.hs \
+	    Frontend/LexTensor.hs \
+	    Frontend/ParTensor.hs \
+	    RenderCalc.hs \
+	    Transform.hs \
+	    CalcFromExpr.hs
+
+tensorkernel: Kernel.hs $(HSMODULES)
+	ghc --make $< $(LDOPTS) -static -o tensorkernel
+
+tensor: Main.hs XPerm.hs $(HSMODULES)
+	ghc --make $< $(LDOPTS) -static -o tensor
+
+test: Test.hs $(HSMODULES)
 	runhaskell Test.hs
 
-docker: Main.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
+docker: Main.hs $(HSMODULES)
 	docker run --rm -v $(PWD)/../:/bnfctensor -w /bnfctensor/src bnfctensor:latest make tensor
 
-docker-test: Test.hs Core.hs Tensor.hs Check.hs Frontend/LexTensor.hs Frontend/ParTensor.hs RenderCalc.hs Transform.hs CalcFromExpr.hs
+docker-test: Test.hs $(HSMODULES)
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest make test
 
 docker-ghci:
-	docker run --rm -it -v $(PWD):/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:latest
+	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor/src bnfctensor:latest ghci -L../canonicalize/ -lcanonicalize -lstdc++ -fobject-code
 
 docker-ghci-debug:
-	docker run --rm -it -v $(PWD):/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:debug2 ghci -fexternal-interpreter -prof
+	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:debug2 ghci -fexternal-interpreter -prof
 
 clean:
 	-rm -f tensor *.hi *.o Frontend/*.hi Frontend/*.o
@@ -39,3 +57,10 @@ Frontend/%.hs: %.x
 
 Frontend/ParTensor.y Frontend/LexTensor.x: Tensor.cf
 	bnfc -p Frontend --ghc $<
+
+
+VPATH = ../canonicalize
+
+libcanonicalize.so: src/lib.rs
+	$(MAKE) -C ../canonicalize
+

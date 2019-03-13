@@ -26,6 +26,7 @@ import Control.Monad.Reader
 import RenderCalc
 
 import Eval
+import XPerm
 
 import Core (
     BookState(..),
@@ -188,6 +189,9 @@ usage = do
 
 main :: IO ()
 main = repl
+
+-- main :: IO ()
+-- main = putStrLn $ show $ testxperm [1,2,3,4]
 
 
 -- main :: IO ()
