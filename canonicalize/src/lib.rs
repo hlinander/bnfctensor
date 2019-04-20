@@ -30,7 +30,6 @@ mod tests {
         let set = vec![199, 22, 310, 44, 516];
         let p1 = Perm::from(vec![3, 4, 2, 0, 1]);
         let p2 = Perm::from(vec![0, 3, 1, 4, 2]);
-        // let mul = &p2 * &p1;
         let mul = &p1 * &p2;
 
         assert_eq!(mul.permute(&set), p2.permute(&p1.permute(&set)));
@@ -66,8 +65,6 @@ mod tests {
             vec![7, 8, 9, 12],
             vec![10, 13],
         ];
-        // let bar = cycles.into_iter();
-        // let qux = bar.map(move |x| Cycle::from((x,n)));
         let foo: Perm = cycles
             .into_iter()
             .map(move |x| Cycle::from((x, n)))
@@ -78,8 +75,31 @@ mod tests {
 
         let sgs = create_sgs(GeneratingSet { g: vec![foo] });
 
+        let foobar = &Perm::from(vec!(1, 2, 3, 4, 5, 6, 11, 8, 9, 12, 13, 0, 7, 10));
+        println!("pi {:?}, pi^2 {:?}, pi^4 {:?}", foobar, &(foobar*foobar), &(&(foobar * foobar) * foobar) * foobar);
         println!("sgs: {:?}", sgs);
-        // let something: Perm = foo.iter().product();
+    }
+
+    #[test]
+    fn knuth_dense_pg() {
+        let n = 10;
+        let mut gs: Vec<Perm> = Vec::new();
+        for i in 0..(n - 1) as u64 {
+            let perm = Perm::from(Cycle::from((&vec!(i, i + 1), n as u64)));
+            gs.push(perm);
+        }
+        println!("{:?}", gs);
+        let mut pg = PermGroup::init(n);
+        for g in gs.clone() {
+            pg.extend(n - 1, g);
+        }
+        assert_eq!(&pg.ts[n-1], &gs);
+        for k in 0..n {
+            for j in 0..k {
+                assert!(pg.gs.contains_key(&(k, j)));
+            }
+        }
+
     }
 }
 
@@ -91,18 +111,12 @@ pub extern "C" fn canonicalize(perm: *const perm_t, out: *mut u8) -> () {
     }
 }
 
-// fn foo(gs: GeneratingSet) -> PermutationGroup {
-
-// }
-
 struct Cycle {
     n: u64,
     c: Vec<u64>,
 }
 
-struct PermutationGroup {
-    // gs: GeneratingSet,
-    // todo gs should contain inverses
+struct PermGroup {
     gs: HashMap<(usize, usize), Perm>,
     js: Vec<Vec<usize>>,
     ts: Vec<Vec<Perm>>,
@@ -141,7 +155,7 @@ struct PermutationGroup {
 
 fn create_sgs(gs: GeneratingSet) -> GeneratingSet {
     let n = gs.g[0].v.len();
-    let mut pg = PermutationGroup::init(n);
+    let mut pg = PermGroup::init(n);
     for g in gs.g {
         pg.extend(n - 1, g);
     }
@@ -153,8 +167,8 @@ fn create_sgs(gs: GeneratingSet) -> GeneratingSet {
     GeneratingSet { g: retn }
 }
 
-impl PermutationGroup {
-    fn init(n: usize) -> PermutationGroup {
+impl PermGroup {
+    fn init(n: usize) -> PermGroup {
         // let n = gs.g[0].v.len();
         let mut ts = Vec::new();
         for i in 0..n {
@@ -176,15 +190,11 @@ impl PermutationGroup {
             js[i].push(i);
         }
 
-        PermutationGroup { gs, js, ts, cs }
+        PermGroup { gs, js, ts, cs }
     }
     fn extend(&mut self, k: usize, pi: Perm) {
         self.ts[k].push(pi);
         let mut i: usize = 0;
-        // while i < self.gs.len() {
-        // while i < self.gs.keys()
-        //         .filter(|(kp, _)| k == *kp )
-        //         .count() {
         while i < self.js[k].len() {
             while self.cs[k][i] < (self.ts[k].len() as u64) {
                 let l = self.cs[k][i] + 1;
@@ -226,7 +236,7 @@ impl PermutationGroup {
     }
 }
 
-#[derive(PartialEq, Debug)]
+#[derive(PartialEq, Clone, Debug)]
 pub struct Perm {
     v: Vec<u64>,
 }
@@ -276,6 +286,21 @@ impl ops::Mul for &Perm {
     // [i1 i2 i3 ... ] [j1 j2 j3 ... ] {1 2 3 4 5}
     //  ^- Image of 1 is i1
     fn mul(self, rh: &Perm) -> Perm {
+        let mut retn = Perm::identity(self.v.len());
+        for i in 0..self.v.len() {
+            retn.v[i] = rh.v[self.v[i] as usize];
+        }
+        retn
+    }
+}
+
+impl ops::Mul for Perm {
+    type Output = Perm;
+    // p_i_j * p_j_k => p_i_k
+    // (p1 * p2) @ x = p1 @ (p2 @ x)
+    // [i1 i2 i3 ... ] [j1 j2 j3 ... ] {1 2 3 4 5}
+    //  ^- Image of 1 is i1
+    fn mul(self, rh: Perm) -> Perm {
         let mut retn = Perm::identity(self.v.len());
         for i in 0..self.v.len() {
             retn.v[i] = rh.v[self.v[i] as usize];
