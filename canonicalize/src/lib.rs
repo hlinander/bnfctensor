@@ -99,7 +99,102 @@ mod tests {
                 assert!(pg.gs.contains_key(&(k, j)));
             }
         }
+    }
 
+    // #[test]
+    fn test_stabilizer_theorem() {
+        let n = 7;
+        let cycles = vec!(
+            vec!(1, 2),
+            vec!(2, 3),
+            vec!(3, 4),
+            vec!(4, 5, 6)
+        );
+
+        let base = Vec::from_iter(0..n);
+
+        let perms: Vec<Perm> = cycles
+            .into_iter()
+            .map(move |x| Cycle::from((&x, n)))
+            .map(Perm::from)
+            .collect();
+
+        let sgs = create_sgs(GeneratingSet { g: perms });
+
+        for b in base {
+            println!("{}", b);
+            let (orbit, _) = sgs.orbit(b);
+            assert_eq!(orbit.len(), 1);
+        }
+    }
+
+    #[test]
+    fn perm_orbit() {
+        let perm = Perm::from(vec!(1, 2, 3, 0));
+        let origin = 0;
+        let expected = vec!(0, 1, 2, 3);
+        let (orbit, _) = perm.orbit(origin);
+        assert_eq!(orbit, expected);
+    }
+
+    #[test]
+    fn test_point_outside_orbit_schreier_trace() {
+        let perm = Perm::from(vec!(1, 2, 3, 0, 5, 4));
+        let origin = 0;
+        let gamma = 4;
+        let (orbit, schreier) = perm.orbit(origin);
+        let gen = schreier_trace(perm.v.len(), gamma, orbit.clone(), schreier);
+        assert_eq!(gen, None);
+    }
+
+    #[test]
+    fn test_schreier_trace() {
+        let perm = Perm::from(vec!(1, 2, 3, 0, 5, 4));
+        let origin = 4;
+        let gamma = 5;
+        let (orbit, schreier) = perm.orbit(origin);
+        let omega = schreier_trace(perm.v.len(), gamma, orbit.clone(), schreier).unwrap();
+        assert_eq!(omega.image(orbit[0]), gamma);
+    }
+
+    #[test]
+    fn perm_schreier_orbit() {
+        let perm = Perm::from(vec!(1, 2, 3, 0, 4));
+        let origin = 0;
+        let (_, schreier) = perm.orbit(origin);
+        assert_eq!(schreier[0], Some(&perm));
+        assert_eq!(schreier[1], Some(&perm));
+        assert_eq!(schreier[2], Some(&perm));
+        assert_eq!(schreier[3], Some(&perm));
+        assert_eq!(schreier[4], None);
+    }
+
+    #[test]
+    fn generator_set_orbit() {
+        let gs = GeneratingSet {
+            g: vec!(
+                Perm::from(vec!(1, 2, 3, 0, 4, 5, 6, 7)),
+                Perm::from(vec!(0, 1, 2, 3, 5, 6, 7, 4)),
+            )
+        };
+        let origin1 = 0;
+        let origin2 = 4;
+        let expected1 = vec!(0, 1, 2, 3);
+        let expected2 = vec!(4, 5, 6, 7);
+        let (orbit1, _) = gs.orbit(origin1);
+        let (orbit2, _) = gs.orbit(origin2);
+        assert_eq!(orbit1, expected1);
+        assert_eq!(orbit2, expected2);
+    }
+
+    #[test]
+    fn test_canonicalize_free_butler() {
+        let g = vec!(
+            Perm::from(vec!(1, 0, 2)),
+            Perm::from(vec!(0, 2, 1)),
+        );
+        let vinst = canonicalize_free_butler(g, Perm::from(vec!(0, 1, 2)));
+        assert_eq!(vinst, Perm::from(vec!(0, 1, 2)));
     }
 }
 
@@ -152,6 +247,28 @@ struct PermGroup {
 //         Bk(σkj(k,i)τ(k, l));
 //         c(k, i)←l;
 //     i←i+ 1;
+
+fn canonicalize_free_butler(gs: Vec<Perm>, pi: Perm) -> Perm {
+    let m = pi.v.len();
+    let sgs = create_sgs(GeneratingSet { g: gs });
+    let mut lambda = pi;
+    let mut K = sgs.clone();
+    for i in 0..m {
+        let (delta, schreier) = K.orbit(i as u64);
+        let (k, _): (usize, u64) = delta.iter()
+            .map(|p| lambda.image(*p))
+            .enumerate()
+            .min_by(|(id1, v1), (id2, v2)| v1.cmp(v2))
+            .unwrap();
+        let p: u64 = delta[k];
+        let omega = schreier_trace(m, p, delta, schreier).unwrap();
+        lambda = lambda * omega;
+        K.g = K.g.into_iter()
+            .filter(|perm| perm.v[i] != i as u64)
+            .collect();
+    }
+    lambda
+}
 
 fn create_sgs(gs: GeneratingSet) -> GeneratingSet {
     let n = gs.g[0].v.len();
@@ -253,12 +370,17 @@ impl Perm {
         let length = v.len();
         let mut retn = Vec::from_iter(0..length as u64);
         for i in 0..length {
+            // 0 1 2 3 4 5 6 7 8 9
+            // 4 2 3 1 0 5 8 6 7 9
             // retn[i] = v[self.v[i] as usize];
-            // [i1 i2 ...] {0 1 2 3}
             //  ^--Image index 0 is index i1
             retn[self.v[i] as usize] = v[i];
         }
         retn
+    }
+
+    fn image(&self, p: u64) -> u64 {
+        self.v[p as usize]
     }
 
     fn inverse(&self) -> Perm {
@@ -270,6 +392,56 @@ impl Perm {
             retn[self.v[i] as usize] = i as u64;
         }
         Perm { v: retn }
+    }
+}
+
+type Point = u64;
+
+fn schreier_trace(n: usize, p: Point, orbit: Vec<Point>, schreier: Vec<Option<&Perm>>) -> Option<Perm> {
+    if p == orbit[0] {
+        return Some(Perm::identity(n));
+    }
+    else {
+        let gen = schreier[p as usize]?;
+        let tail = schreier_trace(n, gen.inverse().image(p), orbit, schreier)?;
+        Some(&tail * gen)
+    }
+}
+
+trait Generator {
+    fn orbit(&self, point: Point) -> (Vec<Point>, Vec<Option<&Perm>>);
+}
+
+impl Generator for Perm {
+    fn orbit(&self, origin: Point) -> (Vec<Point>, Vec<Option<&Perm>>) {
+        let mut orbit = vec!(origin);
+        let mut schreier = vec![None; self.v.len()];
+        let mut point = self.image(origin);
+        schreier[origin as usize] = Some(self);
+        while point != origin {
+            orbit.push(point);
+            schreier[point as usize] = Some(self);
+            point = self.image(point);
+        }
+        (orbit, schreier)
+    }
+}
+
+impl Generator for GeneratingSet {
+    fn orbit(&self, origin: Point) -> (Vec<Point>, Vec<Option<&Perm>>) {
+        let mut orbit = Vec::new();
+        let n = self.g[0].v.len();
+        let mut schreier = vec![None; n];
+        for perm in &self.g {
+            let (o, _) = perm.orbit(origin);
+            for p in o {
+                if !orbit.contains(&p) {
+                    orbit.push(p);
+                    schreier[p as usize] = Some(perm);
+                }
+            }
+        }
+        (orbit, schreier)
     }
 }
 
@@ -309,7 +481,22 @@ impl ops::Mul for Perm {
     }
 }
 
-#[derive(PartialEq, Debug)]
+// impl ops::Mul for Option<Perm> {
+//     type Output = Option<Perm>;
+//     // p_i_j * p_j_k => p_i_k
+//     // (p1 * p2) @ x = p1 @ (p2 @ x)
+//     // [i1 i2 i3 ... ] [j1 j2 j3 ... ] {1 2 3 4 5}
+//     //  ^- Image of 1 is i1
+//     fn mul(self, rh: Option<Perm>) -> Option<Perm> {
+//         let mut retn = Perm::identity(self.v.len());
+//         for i in 0..self.v.len() {
+//             retn.v[i] = rh.v[self.v[i] as usize];
+//         }
+//         retn
+//     }
+// }
+
+#[derive(PartialEq, Debug, Clone)]
 struct GeneratingSet {
     g: Vec<Perm>,
 }
