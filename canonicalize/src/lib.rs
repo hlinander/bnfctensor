@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::ops;
+use std::collections::HashSet;
 
 #[cfg(test)]
 mod tests {
@@ -101,17 +102,17 @@ mod tests {
         }
     }
 
-    // #[test]
-    fn test_stabilizer_theorem() {
-        let n = 7;
+    #[test]
+    fn test_stabilizer() {
+        let n = 5;
         let cycles = vec!(
+            vec!(0, 1),
             vec!(1, 2),
             vec!(2, 3),
             vec!(3, 4),
-            vec!(4, 5, 6)
         );
 
-        let base = Vec::from_iter(0..n);
+        let base = Vec::from_iter((0..n).rev());
 
         let perms: Vec<Perm> = cycles
             .into_iter()
@@ -119,12 +120,31 @@ mod tests {
             .map(Perm::from)
             .collect();
 
-        let sgs = create_sgs(GeneratingSet { g: perms });
+        let group = complete(&perms);
 
-        for b in base {
-            println!("{}", b);
-            let (orbit, _) = sgs.orbit(b);
-            assert_eq!(orbit.len(), 1);
+        let stab = |p| {
+            let mut retn: Vec<Perm> = Vec::new();
+            for g in &group {
+                if g.image(p) == p {
+                    retn.push(g.clone());
+                }
+            }
+            retn
+        };
+
+        let sgs = create_sgs(GeneratingSet { g: perms });
+        let complete_sgs = complete(&sgs.g);
+        let hash_sgs: HashSet<Perm> = HashSet::from_iter(complete_sgs.iter().cloned());
+
+        for i in 1..n as usize {
+            let bs = base.iter().take(i);
+            let mut stabs = Vec::new();
+            for b in bs {
+                stabs.push(HashSet::from_iter(stab(*b).into_iter()));
+            }
+            let s_b: HashSet<Perm> = stabs.iter().fold(stabs[0].clone(), |acc, x| acc.intersection(&x).cloned().collect());
+            let sgs_intersect_stab: HashSet<&Perm> = hash_sgs.intersection(&s_b).collect();
+            assert!(sgs_intersect_stab.len() >= s_b.len());
         }
     }
 
@@ -193,8 +213,23 @@ mod tests {
             Perm::from(vec!(1, 0, 2)),
             Perm::from(vec!(0, 2, 1)),
         );
-        let vinst = canonicalize_free_butler(g, Perm::from(vec!(0, 1, 2)));
-        assert_eq!(vinst, Perm::from(vec!(0, 1, 2)));
+        let vinst1 = canonicalize_free_butler(&g, Perm::from(vec!(2, 1, 0)));
+        let vinst2 = canonicalize_free_butler(&g, Perm::from(vec!(1, 0, 2)));
+        let vinst3 = canonicalize_free_butler(&g, Perm::from(vec!(1, 2, 0)));
+        assert_eq!(vinst1, Perm::from(vec!(0, 1, 2)));
+        assert_eq!(vinst2, Perm::from(vec!(0, 1, 2)));
+        assert_eq!(vinst3, Perm::from(vec!(0, 1, 2)));
+    }
+
+    // #[test]
+    fn test_canonicalize_free_butler_example7() {
+        let g = vec!(
+            Perm::from(vec!(0, 1, 3, 2)),
+            Perm::from(vec!(2, 3, 0, 1)),
+        );
+        // let sgs = create_sgs(GeneratingSet{ g: gs.clone() });
+        let vinst = canonicalize_free_butler(&g, Perm::from(vec!(1, 2, 0, 3)));
+        assert_eq!(vinst, Perm::from(vec!(0, 3, 2, 1)));
     }
 }
 
@@ -206,12 +241,34 @@ pub extern "C" fn canonicalize(perm: *const perm_t, out: *mut u8) -> () {
     }
 }
 
+fn complete(perms: &Vec<Perm>) -> Vec<Perm> {
+    let mut group = perms.clone();
+    let mut members: HashSet<Perm> = HashSet::from_iter(group.iter().cloned());
+    let mut i = 0;
+    let n = perms[0].v.len();
+    while i < group.len() {
+        let perm = group[i].clone();
+        let mut append = Vec::new();
+        for p in &group {
+            let next = &perm * p;
+            if !members.contains(&next) && next != Perm::identity(n as usize) {
+                append.push(next.clone());
+                members.insert(next);
+            }
+        }
+        group.extend(append);
+        i += 1;
+    }
+    group
+}
+
 struct Cycle {
     n: u64,
     c: Vec<u64>,
 }
 
 struct PermGroup {
+    b: Vec<Point>,
     gs: HashMap<(usize, usize), Perm>,
     js: Vec<Vec<usize>>,
     ts: Vec<Vec<Perm>>,
@@ -248,24 +305,28 @@ struct PermGroup {
 //         c(k, i)←l;
 //     i←i+ 1;
 
-fn canonicalize_free_butler(gs: Vec<Perm>, pi: Perm) -> Perm {
+fn canonicalize_free_butler(gs: &Vec<Perm>, pi: Perm) -> Perm {
     let m = pi.v.len();
-    let sgs = create_sgs(GeneratingSet { g: gs });
+    let sgs = create_sgs(GeneratingSet { g: gs.clone() });
     let mut lambda = pi;
-    let mut K = sgs.clone();
-    for i in 0..m {
-        let (delta, schreier) = K.orbit(i as u64);
+    let mut local_sgs = sgs.clone();
+    let base = (0..m as Point).rev();
+    for i in base {
+        let (delta, schreier) = local_sgs.orbit(i);
         let (k, _): (usize, u64) = delta.iter()
             .map(|p| lambda.image(*p))
             .enumerate()
-            .min_by(|(id1, v1), (id2, v2)| v1.cmp(v2))
+            .max_by(|(_, v1), (_, v2)| v1.cmp(v2))
             .unwrap();
         let p: u64 = delta[k];
         let omega = schreier_trace(m, p, delta, schreier).unwrap();
-        lambda = lambda * omega;
-        K.g = K.g.into_iter()
-            .filter(|perm| perm.v[i] != i as u64)
+        lambda = omega * lambda;
+        local_sgs.g = local_sgs.g.into_iter()
+            .filter(|perm| perm.v[i as usize] == i)
             .collect();
+        if local_sgs.g.len() == 0 {
+            return lambda;
+        }
     }
     lambda
 }
@@ -279,7 +340,11 @@ fn create_sgs(gs: GeneratingSet) -> GeneratingSet {
 
     let mut retn = Vec::new();
     for t in pg.ts {
-        retn.extend(t);
+        for p in t {
+            if !retn.contains(&p) {
+                retn.push(p);
+            }
+        }
     }
     GeneratingSet { g: retn }
 }
@@ -306,8 +371,9 @@ impl PermGroup {
             gs.insert((i, i), Perm::identity(n));
             js[i].push(i);
         }
+        let b = Vec::from_iter((0..n as Point).rev());
 
-        PermGroup { gs, js, ts, cs }
+        PermGroup { b, gs, js, ts, cs }
     }
     fn extend(&mut self, k: usize, pi: Perm) {
         self.ts[k].push(pi);
@@ -334,7 +400,7 @@ impl PermGroup {
         }
         let sigma = &self.gs[&(k, j)];
         let perm = &pi * &sigma.inverse();
-        if self.is_member(&perm, k) {
+        if self.is_member(&perm, k - 1) {
             return;
         }
         self.extend(k - 1, perm);
@@ -345,7 +411,7 @@ impl PermGroup {
         if !self.gs.contains_key(&(k, j)) {
             return false;
         }
-        if k == 1 {
+        if k == 0 {
             return true;
         }
         let sigma = &self.gs[&(k, j)];
@@ -353,7 +419,7 @@ impl PermGroup {
     }
 }
 
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Eq, PartialEq, Clone, Debug, Hash)]
 pub struct Perm {
     v: Vec<u64>,
 }
@@ -429,17 +495,29 @@ impl Generator for Perm {
 
 impl Generator for GeneratingSet {
     fn orbit(&self, origin: Point) -> (Vec<Point>, Vec<Option<&Perm>>) {
-        let mut orbit = Vec::new();
+        let mut orbit = vec!(origin);
         let n = self.g[0].v.len();
+        let mut i = 0;
         let mut schreier = vec![None; n];
-        for perm in &self.g {
-            let (o, _) = perm.orbit(origin);
-            for p in o {
-                if !orbit.contains(&p) {
-                    orbit.push(p);
-                    schreier[p as usize] = Some(perm);
+        // for perm in &self.g {
+        //     let (o, _) = perm.orbit(origin);
+        //     for p in o {
+        //         if !orbit.contains(&p) {
+        //             orbit.push(p);
+        //             schreier[p as usize] = Some(perm);
+        //         }
+        //     }
+        // }
+        while i < orbit.len() {
+            let p = orbit[i];
+            for g in &self.g {
+                let image = g.image(p);
+                if !orbit.contains(&image) {
+                    orbit.push(image);
+                    schreier[image as usize] = Some(g);
                 }
             }
+            i+=1;
         }
         (orbit, schreier)
     }
@@ -454,7 +532,7 @@ impl From<Vec<u64>> for Perm {
 impl ops::Mul for &Perm {
     type Output = Perm;
     // p_i_j * p_j_k => p_i_k
-    // (p1 * p2) @ x = p1 @ (p2 @ x)
+    // (p1 * p2) @ x = p2 @ (p1 @ x)
     // [i1 i2 i3 ... ] [j1 j2 j3 ... ] {1 2 3 4 5}
     //  ^- Image of 1 is i1
     fn mul(self, rh: &Perm) -> Perm {
@@ -469,7 +547,7 @@ impl ops::Mul for &Perm {
 impl ops::Mul for Perm {
     type Output = Perm;
     // p_i_j * p_j_k => p_i_k
-    // (p1 * p2) @ x = p1 @ (p2 @ x)
+    // (p1 * p2) @ x = p2 @ (p1 @ x)
     // [i1 i2 i3 ... ] [j1 j2 j3 ... ] {1 2 3 4 5}
     //  ^- Image of 1 is i1
     fn mul(self, rh: Perm) -> Perm {
