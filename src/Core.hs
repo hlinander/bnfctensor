@@ -176,7 +176,7 @@ instance Uniplate Calc where
     uniplate (Op n idx c) = plate Op |- n |- idx |* c
 
 data Index = Index {
-    indexRepr :: ReprType,
+    indexRepr :: IndexType,
     indexValence :: ValenceType
 } deriving (Show, Eq, Ord)
 
@@ -244,6 +244,7 @@ otherValence :: ValenceType -> ValenceType
 otherValence Up = Down
 otherValence Down = Up
 
+-- Free indices in calc
 indexFromCalc :: Calc -> [Index]
 indexFromCalc x = case x of
   (Number _) -> []
@@ -253,10 +254,9 @@ indexFromCalc x = case x of
   (Sum first _) -> indexFromCalc first
   (Prod f1 f2) -> indexFromCalc f1 ++ indexFromCalc f2
   -- Permuted indices must be of same type so can just pass through
-  (Permute p c) -> permuteList p $ indexFromCalc c
+  (Permute p c) -> permuteList (inverse p) $ indexFromCalc c
   (Contract i1 i2 c)
       | i1 < i2 -> deleteAt i1 $ deleteAt i2 (indexFromCalc c)
-  (Contract i1 i2 c)
       | i1 > i2 -> deleteAt i2 $ deleteAt i1 (indexFromCalc c)
   (Op n idx c) -> idx ++ indexFromCalc c
 

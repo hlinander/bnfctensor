@@ -13,7 +13,7 @@ import Control.Monad.Reader
 import Debug.Trace
 -- import Debug
 import System.IO.Unsafe
-import XPerm
+-- import XPerm
 
 import Core
 import RenderCalc
@@ -27,6 +27,7 @@ execute "distribute" (c:[]) = distribute c
 execute "leibnitz" (c:[]) = leibnitz c
 execute "simp" (c:[]) = simplify c
 execute "show" (c:[]) = showCalc c
+execute "ccp" (c:[]) = commuteContractPermute c
 execute "tree" (c:[]) = renderTreeRepl c
 execute "sort" (c:[]) = sortCalc c
 execute "sumsort" (c:[]) = sortSum c
@@ -70,7 +71,7 @@ distribute' c = case c of
     Contract i1 i2 c -> Contract i1 i2 (distribute' c)
     _ -> c
 
-simplify = fixPoint -- eliminateMetrics
+simplify = fixPoint
       (commuteContractPermute
     . simplifyContract
     . eliminateMetrics
@@ -193,7 +194,7 @@ simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
 simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
 simplifyFactors' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (Prod f1 f2) -- TODO: Duplicate rule
 simplifyFactors' (Prod (Number 1) f) = f
-simplifyFactors' (Prod (Number 0) f) = Number 0
+-- simplifyFactors' (Prod (Number 0) f) = Number 0
 simplifyFactors' x = x
 
 simplifyPermutations :: Calc -> Calc
@@ -217,6 +218,7 @@ simplifyContract' (Contract i1 i2 (Prod (Number n) f)) = Prod (Number n) (Contra
 simplifyContract' (Prod (Contract i1 i2 c) f2) = Contract i1 i2 (Prod c f2)
 simplifyContract' (Prod f1 (Contract i1 i2 c)) = Contract (i1 + n) (i2 + n) (Prod f1 c)
   where n = nFreeIndices f1
+--simplifyContract' (Contract _ _ (Number 0)) = Number 0
 simplifyContract' x = x
 
 -- g.[a d]T^[a b c] = T.d^[b c]
@@ -232,17 +234,17 @@ simplifyContract' x = x
 eliminateMetrics :: Calc -> Calc
 eliminateMetrics = fixPoint (transform f)
   where f calc = case calc of
-                  Contract i1 i2 c
-                  -- TODO: Replace with fromMaybe $ fmap curry ?
-                    | i1 < i2 -> case indexOnMetric c i1 of
-                                  Nothing -> case indexOnMetric c i2 of
-                                    Nothing -> calc
-                                    Just (index, oim) -> calc -- eliminateOneMetric c i2 oim i1 index
-                                  Just (index, oim) -> eliminateOneMetric c i1 oim i2 index
-                  x -> x
+            Contract i1 i2 c
+            -- TODO: Replace with fromMaybe $ fmap curry ?
+              | i1 < i2 -> case indexOnMetric c i1 of
+                            Nothing -> case indexOnMetric c i2 of
+                              Nothing -> calc
+                              Just (index, oim) -> eliminateOneMetric c i2 oim i1 index
+                            Just (index, oim) -> eliminateOneMetric c i1 oim i2 index
+            x -> x
 
 eliminateOneMetric c im oim it index = Permute perm $ removeMetric (replaceIndex c it index) im
-  where perm = sortingPermutationAsc posList
+  where perm = inverse $ sortingPermutationAsc posList
         [r1, r2] = sort [im, oim]
         posList = deleteAt r1 $ deleteAt r2 $ replaceAt it (oim) [0..(nFreeIndices c - 1)]
 
@@ -266,8 +268,13 @@ indexOnMetric c i = runReader (indexOnMetric' c i) i
 
 indexOnMetric' :: Calc -> Int -> Reader Int (Maybe (Index, Int))
 indexOnMetric' c i = case c of
-  Tensor "g" idx | i == 0 -> ask >>= \pos -> return $ Just $ (idx !! 1, pos + 1)
-                 | i == 1 -> ask >>= \pos -> return $ Just $ (idx !! 0, pos - 1)
+  Tensor "g" idx
+    | i == 0 -> do
+      originalPos <- ask
+      return $ Just $ (idx !! 1, originalPos + 1)
+    | i == 1 -> do
+      originalPos <- ask
+      return $ Just $ (idx !! 0, originalPos - 1)
   Prod f1 f2
     | i < n1 -> indexOnMetric' f1 i
     | otherwise -> indexOnMetric' f2 (i - n1)
@@ -298,19 +305,29 @@ commuteContractPermute' (Contract i1 i2 (Permute perm c)) = if permutationSize n
           i2' = fromJust $ elemIndex i2 (permuteList perm list)
           [i1'', i2''] = sort [i1', i2'] :: [Int]
 commuteContractPermute' x = x
-
+-- Contract 5 <-> 6 Pos: []
+-- |
+-- `- toPermutation [3,4,5,6,7,1,2] Pos: [0]
+--    |
+--    `- (*) Pos: [0,0]
+--       |
+--       +- Oi^a̲.b̲.c̲^d̲.e̲ Pos: [0,0,0]
+--       |
+--       `- g^a̲.b̲ Pos: [0,0,1]
 validCalc :: Calc -> Bool
 validCalc x = case x of
   Permute p c -> (permutationSize p == length (indexFromCalc c)) && validCalc c
   Contract i1 i2 c -> inRange i1 0 (n - 1)
                    && inRange i2 0 (n - 1)
-                   -- && (indexRepr (indices!!i1) == indexRepr (indices!!i2))
+                   && (indexRepr (indices !! i1) == indexRepr (indices !! i2))
                    && validCalc c
     where inRange i min max = (i >= min) && (i <= max)
           indices = indexFromCalc c
           n = length indices
   Prod f1 f2 -> validCalc f1 && validCalc f2
-  Sum t1 t2 -> validCalc t1 && validCalc t2
+  Sum t1 t2 -> validCalc t1 && validCalc t2 && (sort freeLH) == (sort freeRH)
+    where freeLH = indexFromCalc t1
+          freeRH = indexFromCalc t2
   Op _ _ c -> validCalc c
   _ -> True
 
@@ -330,6 +347,7 @@ replaceIndex c i idx = case c of
         | i >= length idxs -> Op n idxs $ replaceIndex c' (i - (length idxs)) idx
     _ -> c
 
+-- WHAT DOES THIS FUNCTION DO?
 indexUnderContract :: Int -> Int -> Int -> Int
 indexUnderContract i1 i2 i
     | i2 > i1 = (deleteAt i1 $ deleteAt i2 [0..]) !! i
@@ -425,14 +443,14 @@ colCont' c lperm dummies = (lperm, dummies, c)
 -- the contract indices already refers to the "names" (see xperm_new.cc L2315) of the dummies
 debug calc = unsafePerformIO $ putStrLn (renderConsole calc) >> return calc
 
-canonXPerm :: Calc -> Calc
-canonXPerm (Sum s1 s2) = Sum (canonXPerm s1) (canonXPerm s2)
-canonXPerm c = xPermToCalc cfree (traceShowId cxperm) (dummies)-- traceShow (show (lperm, frees, dummies, gs, cperm, cxperm)) (debug c)
-  where frees = [1..(nFreeIndices c)]
-        (lperm, dummies, cfree) = xPermData c
-        lperm' = lperm ++ [length lperm + 1, length lperm + 2]
-        gs = generatingSet cfree
-        cxperm = xPerm lperm' gs [1..(nFreeIndices cfree)] frees dummies
+-- canonXPerm :: Calc -> Calc
+-- canonXPerm (Sum s1 s2) = Sum (canonXPerm s1) (canonXPerm s2)
+-- canonXPerm c = xPermToCalc cfree (traceShowId cxperm) (dummies)-- traceShow (show (lperm, frees, dummies, gs, cperm, cxperm)) (debug c)
+--   where frees = [1..(nFreeIndices c)]
+--         (lperm, dummies, cfree) = xPermData c
+--         lperm' = lperm ++ [length lperm + 1, length lperm + 2]
+--         gs = generatingSet cfree
+--         cxperm = xPerm lperm' gs [1..(nFreeIndices cfree)] frees dummies
 
 -- [1 2 5 3 4 6] [5 6]
 reduceContractions c perm [] = Permute (toPermutation perm) c

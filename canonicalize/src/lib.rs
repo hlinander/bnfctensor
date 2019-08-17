@@ -109,7 +109,7 @@ mod tests {
 
     #[test]
     fn test_stabilizer() {
-        let n = 100;
+        let n = 10;
         let cycles = vec![vec![0, 1], vec![1, 2], vec![2, 3], vec![3, 4]];
 
         let base = Vec::from_iter((0..n).rev());
@@ -334,9 +334,8 @@ struct PermGroup {
 
 fn canonicalize_free_butler(gs: &Vec<Perm>, pi: Perm) -> Perm {
     let m = pi.v.len();
-    let sgs = create_sgs(GeneratingSet { g: gs.clone() });
+    let mut local_sgs = create_sgs(GeneratingSet { g: gs.clone() });
     let mut lambda = pi;
-    let mut local_sgs = sgs.clone();
     let base = (0..m as Point).rev();
     for i in base {
         let (delta, schreier) = local_sgs.orbit(i);

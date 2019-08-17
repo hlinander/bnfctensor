@@ -1,7 +1,8 @@
 .PHONY: all clean docker-ghci docker docker-ghci-debug docker-test test tensor tensorkernel xperm
 
 LIBDIR = ../canonicalize
-LDOPTS = -lstdc++ -lcanonicalize -L$(LIBDIR)
+# LDOPTS = -lstdc++ -lcanonicalize -L$(LIBDIR)
+LDOPTS = -lstdc++ -L$(LIBDIR)
 
 all: xperm tensor tensorkernel # libcanonicalize.so
 
@@ -27,7 +28,7 @@ tensor: Main.hs XPerm.hs $(HSMODULES)
 	ghc --make $< $(LDOPTS) -static -o tensor
 
 test: Test.hs $(HSMODULES)
-	runhaskell Test.hs
+	runhaskell RunTest.hs --ghc-arg="-lstdc++ -fobject-code"
 
 docker: Main.hs $(HSMODULES)
 	docker run --rm -v $(PWD)/../:/bnfctensor -w /bnfctensor/src bnfctensor:latest make tensor
@@ -36,10 +37,11 @@ docker-test: Test.hs $(HSMODULES)
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest make test
 
 docker-ghci:
-	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor/src bnfctensor:latest ghci -L../canonicalize/ -lcanonicalize -lstdc++ -fobject-code
+	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor/src bnfctensor:latest ghci -lstdc++ -fobject-code
+	#docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor/src bnfctensor:latest ghci -L../canonicalize/ -lcanonicalize -lstdc++ -fobject-code
 
 docker-ghci-debug:
-	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:debug2 ghci -fexternal-interpreter -prof
+	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:debug ghci -fexternal-interpreter -prof
 
 clean:
 	-rm -f tensor *.hi *.o Frontend/*.hi Frontend/*.o

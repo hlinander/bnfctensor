@@ -8,3 +8,6 @@ Functions!
 
 Fix operator @ precedence (T.a + Q.a@S^b.b)
 Fix free indices type checker (same expr as above)
+
+
+VALIDATE ALL OCCURENCES OF PERMUTE / MULTIPLY / MULTIPLYMANY / INVERSE

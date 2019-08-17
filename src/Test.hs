@@ -1,8 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
 
-module Test (
-    module U
-) where
+module Test where
 
 import Debug.Trace
 import System.IO.Unsafe
@@ -30,7 +28,8 @@ instance Arbitrary Calc where
                 (2, resize (n-1) arbitrarySum),
                 (2, resize (n-1) arbitraryProduct),
                 (1, resize (n-1) arbitraryContraction),
-                (2, arbitrarySelfContraction)
+                (2, arbitrarySelfContraction),
+                (2, arbitraryMetric)
                ]
 
 shrinkCalc :: Calc -> [Calc]
@@ -85,7 +84,7 @@ prop_replaceIndex c i idx = length (indexFromCalc c) > i && i >= 0
         ==> counterexample (renderConsole c ++ " -> " ++ renderConsole replaced) $ (indexFromCalc replaced) !! i == idx
         where replaced = replaceIndex c i idx
 
-arbitraryContraction = suchThat arbitrary (\c -> length (indexFromCalc c) > 2) >>= arbitraryContract
+arbitraryContraction = suchThat arbitrary (\c -> length (indexFromCalc c) >= 2) >>= arbitraryContract
 
 arbitraryContract :: Calc -> Gen Calc
 arbitraryContract c = do
@@ -148,30 +147,63 @@ arbitraryTensor = do
 arbitraryIdentifier :: Gen String
 arbitraryIdentifier = vectorOf 2 (elements ['a'..'z']) >>= \(x:xs) -> return $ toUpper x : xs
 
+
+arbitraryMetric :: Gen Calc
+arbitraryMetric = do
+    index1 <- arbitrary
+    index2 <- arbitrary
+    return $ Tensor "g" [index1, index2]
+
+
 prop_indexFromCalcUnderContraction :: Calc -> Property
 prop_indexFromCalcUnderContraction c = length (indexFromCalc c) > 2 ==>
     forAll (arbitraryContract c) invariant
         where invariant c' = length (indexFromCalc c') == (length (indexFromCalc c)) - 2
 
 -- NEEDS HELP
-prop_commuteContractPermute :: Calc -> Property
-prop_commuteContractPermute calc = length (indexFromCalc calc) > 2
-    ==> do
-    permuted <- arbitraryPermute calc
-    contracted <- arbitraryContract permuted
-    let r1 = renderConsole contracted
-    let r2 = renderConsole $ commuteContractPermute' contracted
-    return $ counterexample (r1 ++ " /= " ++ r2) (r1 == r2)
+-- prop_commuteContractPermute :: Calc -> Property
+-- prop_commuteContractPermute calc = length (indexFromCalc calc) > 2
+--     ==> do
+--     permuted <- arbitraryPermute calc
+--     contracted <- arbitraryContract permuted
+--     let r1 = renderConsole contracted
+--     let r2 = renderConsole $ commuteContractPermute' contracted
+--     return $ counterexample (r1 ++ " /= " ++ r2) (r1 == r2)
 
 prop_renderCalc :: Calc -> Bool
 prop_renderCalc calc = not (null (renderConsole calc))
 
-prop_preEliminateMetrics :: Calc -> Property
-prop_preEliminateMetrics c = (length (indexFromCalc c) > 2)
+prop_eliminateMetricsIsValid :: Calc -> Property
+prop_eliminateMetricsIsValid c = (length (indexFromCalc c) > 2)
     ==> forAll (arbitraryContract c) $ \calc -> do
-        let condition = validCalc calc ==> validCalc (preEliminateMetrics calc)
+        let condition = validCalc calc ==> validCalc (eliminateMetrics calc)
         counterexample (renderConsole calc) condition
 
+transformIsValid :: (Calc -> Calc) -> Calc -> Property
+transformIsValid f calc = do 
+    let condition = validCalc calc ==> validCalc (f calc)
+    counterexample (renderConsole calc) condition
+
+prop_simplifyIsValid :: Calc -> Property
+prop_simplifyIsValid = transformIsValid simplify
+
+prop_sortCalcIsValid :: Calc -> Property
+prop_sortCalcIsValid = transformIsValid sortCalc
+
+prop_simplifyContractIsValid :: Calc -> Property
+prop_simplifyContractIsValid = transformIsValid simplifyContract
+
+prop_commuteContractPermuteIsValid :: Calc -> Property
+prop_commuteContractPermuteIsValid = transformIsValid commuteContractPermute
+
+prop_simplifyFactorsIsValid :: Calc -> Property
+prop_simplifyFactorsIsValid = transformIsValid simplifyFactors
+
+prop_simplifyTermsIsValid :: Calc -> Property
+prop_simplifyTermsIsValid = transformIsValid simplifyTerms
+
+prop_simplifyPermutationsIsValid :: Calc -> Property
+prop_simplifyPermutationsIsValid = transformIsValid sortCalc
 
 instance Arbitrary Abs.LabelList where
     arbitrary = genericArbitrary
@@ -196,6 +228,4 @@ prop_image n = n >= 0 ==> forAll (shuffle [1..(n+1)*2]) assertion
           testList = [0..]
 
 return []
-runTests = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 100 })
-
-main = runTests
+runTests = $forAllProperties (quickCheckWithResult stdArgs { maxSuccess = 500 })
