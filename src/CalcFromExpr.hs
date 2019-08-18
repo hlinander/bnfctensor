@@ -99,8 +99,9 @@ calcFromExpr' x = case x of
   --   (calc, idx) <- calcFromExpr' expr
   --   return $ (execute name [calc], idx)
   Abs.Func (Abs.Label name) args -> do
+    bs <- ask
     argsAndIdxs <- mapM calcFromExpr' args
-    return $ (execute name (map fst argsAndIdxs), snd $ head argsAndIdxs)
+    return $ (execute bs name (map fst argsAndIdxs), snd $ head argsAndIdxs)
 
   x -> (return $ (traceShow ("vinsten: " ++ show x) (Number 1), []))
 

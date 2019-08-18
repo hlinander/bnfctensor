@@ -9,6 +9,7 @@ import Data.Maybe
 import Data.List
 import Data.Ratio
 import Control.Monad.Reader
+import qualified Data.Map as M
 
 import Debug.Trace
 -- import Debug
@@ -22,22 +23,22 @@ import RustPerm
 import Foreign.Ptr
 
 
-execute :: String -> [Calc] -> Calc
-execute "distribute" (c:[]) = distribute c
-execute "leibnitz" (c:[]) = leibnitz c
-execute "simp" (c:[]) = simplify c
-execute "show" (c:[]) = showCalc c
-execute "ccp" (c:[]) = commuteContractPermute c
-execute "tree" (c:[]) = renderTreeRepl c
-execute "sort" (c:[]) = sortCalc c
-execute "sumsort" (c:[]) = sortSum c
-execute "elm" (c:[]) = eliminateMetrics c
-execute "collect" (c:[]) = fixPoint collectTerms c
-execute "sub" (c:pos) = case subCalc c pos of
+execute :: BookState -> String -> [Calc] -> Calc
+execute _ "distribute" (c:[]) = distribute c
+execute _ "leibnitz" (c:[]) = leibnitz c
+execute _ "simp" (c:[]) = simplify c
+execute _ "show" (c:[]) = showCalc c
+execute _ "ccp" (c:[]) = commuteContractPermute c
+execute _ "tree" (c:[]) = renderTreeRepl c
+execute _ "sort" (c:[]) = sortCalc c
+execute _ "sumsort" (c:[]) = sortSum c
+execute _ "elm" (c:[]) = eliminateMetrics c
+execute _ "collect" (c:[]) = fixPoint collectTerms c
+execute _ "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
-execute "canon" (c:[]) = canonPerm c
-execute _ (c:rest) = c
+execute bs "canon" (c:[]) = canonPerm bs c
+execute _ _ (c:rest) = c
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
 fixPoint = fixPoint' 100
@@ -52,15 +53,17 @@ fixPoint' n f c = case n of
 showCalc :: Calc -> Calc
 showCalc c = traceShowId c
 
-canonPerm :: Calc -> Calc
-canonPerm (Sum s1 s2) = Sum (canonPerm s1) (canonPerm s2)
-canonPerm c = permToCalc cfree (traceShowId outPerm)
+canonPerm :: BookState -> Calc -> Calc
+canonPerm bs c@(Prod p1 p2) = Prod (canonPerm bs p1) (canonPerm bs p2)
+canonPerm bs c@(Contract _ _ _) = c
+canonPerm bs (Sum s1 s2) = Sum (canonPerm bs s1) (canonPerm bs s2)
+canonPerm bs c@(Number _) = c
+canonPerm bs c = permToCalc cfree (traceShowId outPerm)
   where frees = [1..(nFreeIndices c)]
-        (perm, cfree) = permData c
+        (perm, cfree, gs) = permData bs c
         -- permWithSign = perm ++ [length perm + 1, length perm + 2]
         permWithSign = [1,2] ++ (map ((+) 2) perm)
-        gs = generatingSet cfree
-        outPerm = canonicalizeFree permWithSign gs
+        outPerm = canonicalizeFree permWithSign (map fromPermutation gs)
 
 
 permToCalc :: Calc -> [Int] -> Calc
@@ -69,9 +72,11 @@ permToCalc c perm = Prod sign (Permute (toPermutation $ traceShow lperm lperm) c
         [s1, s2] = take 2 perm
         sign = if s2 > s1 then Number 1 else Number (-1)
 
-permData :: Calc -> ([Int], Calc)
-permData (Permute p c) = (fromPermutation p, c)
-permData c = ([1..(nFreeIndices c)], c)
+permData :: BookState -> Calc -> ([Int], Calc, [Permutation])
+permData bs (Permute p c@(Tensor name _)) = (fromPermutation p, c, vinst)
+  where vinst = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
+permData bs c@(Tensor name _) = ([1..(nFreeIndices c)], c, vinst)
+  where vinst = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
 
 -----------------------------------------------------------------------
 -- Basic algebraic convenience
@@ -177,6 +182,13 @@ isSimilar c1 (Prod (Number _) c2) | c1 == c2 = True
 isSimilar c1 c2 | c1 == c2 = True
 isSimilar _ _ = False
 
+-- turbo haxx, please look away
+isSimilar' :: Calc -> Calc -> Ordering
+isSimilar' (Prod (Number _) c1) c2 | c1 == c2 = EQ
+isSimilar' c1 (Prod (Number _) c2) | c1 == c2 = EQ
+isSimilar' c1 c2 | c1 == c2 = EQ
+isSimilar' _ _ = GT
+
 -- collectTerms2 = transform f
 --   where f c@(Sum s1 s2) = concat $ groupBy isSimilar (flattenSum c)
 
@@ -184,7 +196,7 @@ collectTerms :: Calc -> Calc
 collectTerms = transform collectTerms'
 
 collectTerms' :: Calc -> Calc
-collectTerms' c@(Sum s1 s2) = treeSum $ (collectSumList . concat . (groupBy isSimilar) . flattenSum) c
+collectTerms' c@(Sum s1 s2) = treeSum $ (collectSumList . concat . (groupBy isSimilar) . (sortBy isSimilar') . flattenSum) c
 collectTerms' x = x
 
 isCalcSum (Sum _ _) = True

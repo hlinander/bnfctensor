@@ -49,6 +49,7 @@ evalStatement bs stmt  = do
         StmtAssign (Label var) expr -> evalAssignExpr bs var expr
         StmtVoid expr -> evalAssignExpr bs (currentAnonymous bs) expr
         StmtFuncDef name exprs stmts -> undefined
+        StmtSymmetry sym -> return (bs, printTree $ sym)
         std@(StmtTensorDef ts ds) -> return (bs, printCalc mode $ printTree std)
         sto@(StmtOpDef os ds) -> return (bs, printCalc mode $ printTree sto)
         StmtRowDoc doc -> return (bs, printCalc mode $ doc)

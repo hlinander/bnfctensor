@@ -45,8 +45,8 @@ IndexGroup. IndexDef ::= Label "(" Integer ")" ;
 -- Base symmetry declarations
 -----------------------------------------------------------------------
 
-AntiSymmetric. Sym ::= "anti_symmetric" [LabelList] ";" ;
-Symmetric.     Sym ::= "symmetric" [LabelList] ";" ;
+AntiSymmetric. Sym ::= "anti_symmetric" [LabelList] ;
+Symmetric.     Sym ::= "symmetric" [LabelList] ;
 Equality.      Sym ::= "sym" [LabelList] "{" [EqSym] "}" ;
 
 -----------------------------------------------------------------------

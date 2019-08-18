@@ -9,7 +9,10 @@ import Control.Monad.State
 import Control.Monad.Reader
 
 import Data.List
+import Data.Maybe
 import qualified Data.Map as M
+
+import Math.Combinat.Permutations
 
 import Core (
     BookState(..),
@@ -18,6 +21,7 @@ import Core (
     ReprType(..),
     FunctionType(..),
     TensorType(..),
+    SymmetryType(..),
     OpType(..),
     Calc,
     emptyBook,
@@ -45,6 +49,7 @@ analyzeStmt stmt = case stmt of
     StmtTensorDef labels tensordef -> analyzeTensorDef labels tensordef >> return stmt
     StmtOpDef labels opdef -> analyzeOpDef labels opdef >> return stmt
     StmtFuncDef ident exprs _ -> funcAppend (FunctionType (labelFromIdent ident) (length exprs)) >> return stmt
+    StmtSymmetry sym -> analyzeSymDef sym >> return stmt
     StmtAssign (Label l) expr -> do
         _ <- runReaderT (analyzeExpr expr) ([] :: [Index])
         bs <- get
@@ -74,12 +79,15 @@ analyzeTensorDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
 analyzeTensorDef lls def = do
     indices <- analyzeIndices def
     let labels = map labelsFromList lls
-        tensor label = TensorType label indices
+        tensor label = TensorType label indices []
         maybeAppend l = do
           defined <- tensorDefined l
           if defined then fail "Tensor already defined: " -- ++ show $ lookupTensor l
           else tensorAppend l
     mapM_ (maybeAppend . tensor) labels
+
+analyzeSymDef :: Sym -> StateT BookState Err ()
+analyzeSymDef = symmetryAppend
 
 analyzeOpDef :: [LabelList] -> [TensorDef] -> StateT BookState Err ()
 analyzeOpDef lls def = do
@@ -98,7 +106,8 @@ analyzeIndex (TensorDef indices (GroupDef (Label gl) nums)) = do
     let group = GroupType gl $ numsToInts nums
         indexType (IndexGroup (Label il) idim) = ReprType (fromInteger idim) group
         reprs = map indexType indices
-    _ <- mapM (\r -> metricAppend r (TensorType "g" [r, r])) reprs
+        st = symmetrize False 2
+    _ <- mapM (\r -> metricAppend r (TensorType "g" [r, r] st)) reprs
     mapM (return . indexType) indices
 
 analyzeIndices :: [TensorDef] -> (StateT BookState Err) [IndexType]
@@ -156,8 +165,8 @@ checkTensorDecl (Label s) indices = do
     tensorType <- findDeclTensor s
     case tensorType of
         Nothing -> fail $ "Tensor " ++ s ++ " not declared"
-        Just (TensorType _ defIndices) | length defIndices == length indices -> return ()
-        Just (TensorType _ defIndices) -> fail $ "Tensor " ++ s ++ " used with wrong rank, expected " ++ (show defIndices)
+        Just (TensorType _ defIndices _) | length defIndices == length indices -> return ()
+        Just (TensorType _ defIndices _) -> fail $ "Tensor " ++ s ++ " used with wrong rank, expected " ++ (show defIndices)
         _ -> fail $ "Tensor " ++ s ++ " declared multiple times"
 
 checkOpDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
@@ -178,6 +187,13 @@ findDeclOp :: String -> ReaderT [Index] (StateT BookState Err) [OpType]
 findDeclOp s = do
     bookState <- get
     return $ filter (\t -> opName t == s) (bookOps bookState)
+
+
+labelsFromSymmetry :: Sym -> [String]
+labelsFromSymmetry sym = case sym of
+    Symmetric lls -> map labelsFromList lls
+    AntiSymmetric lls -> map labelsFromList lls
+    Equality lls _ -> map labelsFromList lls
 
 labelsFromList :: LabelList -> String
 labelsFromList (LabelList (Label s)) = s
@@ -200,7 +216,6 @@ anonymousAppend c = get >>= flip calcAppend c . nextAnonymous
 calcAppend :: Monad m => String -> Calc -> StateT BookState m ()
 calcAppend s c = modify(\t -> t {
     bookCalcs = M.insert s c $ bookCalcs t,
-    -- bookTensors = (tensorTypeFromCalc s c) : (bookTensors t)
     bookTensors = M.insert s (tensorTypeFromCalc s c) $ (bookTensors t)
 })
 
@@ -208,13 +223,37 @@ metricAppend :: Monad m => ReprType -> TensorType -> StateT BookState m ()
 metricAppend r t = modify(\bs -> bs {
     bookTensors = case lookupTensor (tensorName t) bs of
         Just _ -> bookTensors bs
-        -- Nothing -> (t : bookTensors bs),
         Nothing -> M.insert (tensorName t) t $ bookTensors bs,
     bookMetrics = M.insert r t $ bookMetrics bs
 })
 
 tensorAppend :: Monad m => TensorType -> StateT BookState m ()
 tensorAppend tensor = modify (\t -> t { bookTensors = M.insert (tensorName tensor) tensor $ bookTensors t })
+
+symmetryAppend :: Monad m => Sym -> StateT BookState m ()
+symmetryAppend sym = do
+    bs <- get
+    let tt l = fromJust $ M.lookup l (bookTensors bs) 
+        nIndices = length . tensorIndices . tt
+        unpackLabels = map labelsFromList
+        attachSymmetry st t = t { tensorSymmetries = st }
+        makeAndInsertTypeOnTensor tensors l st = M.insert l (attachSymmetry st (tt l)) tensors
+        updateTensors tensors anti lls = foldr (\l tensors -> makeAndInsertTypeOnTensor tensors l (symmetrize anti $ nIndices l)) tensors lls
+    case sym of -- [1 2 3 4] -> [[1, 2], [2, 3], [3, 4], [4, 1]]
+        Symmetric lls -> modify (\bs -> bs { bookTensors = updateTensors (bookTensors bs) False (unpackLabels lls) })
+        AntiSymmetric lls -> modify (\bs -> bs { bookTensors = updateTensors (bookTensors bs) True (unpackLabels lls) })
+
+-- bool True => antisymmetric False => symmetric
+symmetrize :: Bool -> Int -> [SymmetryType]
+symmetrize anti n = map (\idxSym -> SymmetryType {
+                indexSymmetry = idxSym, 
+                signSymmetry = toPermutation $ if anti then [2,1] else [1,2]
+            }) idxPerms 
+    where 
+          swapPair = transposition n
+          pairs n = map (\i -> (i, (mod i n) + 1)) [1..n]
+          idxPerms = map swapPair $ pairs n 
+
 
 opAppend :: Monad m => OpType -> StateT BookState m ()
 opAppend op = modify (\t -> t { bookOps = op : bookOps t })
@@ -225,7 +264,15 @@ funcAppend f = modify (\t -> t { bookFuncs = f : bookFuncs t })
 tensorDefined :: Monad m => TensorType -> StateT BookState m Bool
 tensorDefined l = do
     bs <- get
-    return $ any (\t -> tensorName t == tensorName l) $ bookTensors bs
+    return $ M.member (tensorName l) $ bookTensors bs
+
+symmetryDefined :: Monad m => TensorType -> StateT BookState m Bool
+symmetryDefined t = do
+    bs <- get
+    let tensorType = M.lookup (tensorName t) $ bookTensors bs
+    case tensorType of
+        Just ts -> return $ [] /= (tensorSymmetries ts)
+        Nothing -> return False
 
 opDefined :: Monad m => OpType -> StateT BookState m Bool
 opDefined l = do

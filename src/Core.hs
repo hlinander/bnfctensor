@@ -42,9 +42,22 @@ data GroupType = GroupType {
 -- createRepr :: GroupType -> Int -> ReprType
 -- createRepr = flip ReprType
 
+-- [1,0,2,3] [0,2,1,3] [0,1,3,2] []
+
 data TensorType = TensorType {
     tensorName :: String,
-    tensorIndices :: [IndexType]
+    tensorIndices :: [IndexType],
+    tensorSymmetries :: [SymmetryType]
+} deriving (Show, Eq, Ord)
+
+
+-- make this data type an sum?
+data SymmetryType = SymmetryType {
+    -- invariant: always length of tensorIndices
+    indexSymmetry :: Permutation,
+    -- invariant always length 2
+    -- either [0,1] [1,0]
+    signSymmetry :: Permutation
 } deriving (Show, Eq, Ord)
 
 --instance Show TensorType where
@@ -105,10 +118,10 @@ currentAnonymous = ('$':) . show . flip (-) 1 . nextAnonymousId
 emptyBook :: BookState
 emptyBook = BookState (M.fromList []) [] [] (M.fromList []) (M.fromList [])
 
--- lookupGeneratingSet :: TensorType -> [Permutation]
--- lookupGeneratingSet t = map (uncurry concatPermutations) (zip sg ig)
---     where sg = map signSymmetry (tensorSymmetries t)
---           ig = map indexSymmetry (tensorSymmetries t)
+lookupGeneratingSet :: TensorType -> [Permutation]
+lookupGeneratingSet t = map (uncurry concatPermutations) (zip sg ig)
+    where sg = map signSymmetry (tensorSymmetries t)
+          ig = map indexSymmetry (tensorSymmetries t)
 
 lookupMetric' :: e -> ReprType -> BookState -> Either e TensorType
 lookupMetric' e r = (maybeToEither e) . lookupMetric r
@@ -271,7 +284,7 @@ nFreeIndices :: Calc -> Int
 nFreeIndices = length . indexFromCalc
 
 tensorTypeFromCalc :: String -> Calc -> TensorType
-tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c)
+tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c) undefined
 
 indexTypeFromCalc :: Calc -> [IndexType]
 indexTypeFromCalc (Number _) = []
