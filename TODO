@@ -2,15 +2,33 @@ Unicode BNFC-git
 
 https://arxiv.org/abs/1702.08114
 
-TensorMap in BookState
-
 Functions!
 
 Fix operator @ precedence (T.a + Q.a@S^b.b)
 Fix free indices type checker (same expr as above)
 
 
-VALIDATE ALL OCCURENCES OF PERMUTE / MULTIPLY / MULTIPLYMANY / INVERSE
+VALIDATE ALL OCCURENCES OF PERMUTE / MULTIPLY / MULTIPLYMANY / INVERSE (maybe fixed?? one left)
 
+REWRITE EVERYTHING WITH PERM SHIT FOR CANON (done?)
 
-REWRITE EVERYTHING WITH PERM SHIT FOR CANON
+Implement EqSyms
+
+hampus dokumenterar hur fan man gor jupyter igen
+
+canon crashed when no symmetry defined
+
+T * 0
+
+Canonicalise arbitrary monoterm T.a.b T.c.d R.e.f
+
+Canonicalise contractions
+
+d
+
+covd 
+
+substitutions
+
+manifolds
+
