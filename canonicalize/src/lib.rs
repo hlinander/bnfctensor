@@ -264,17 +264,17 @@ pub extern "C" fn canonicalize_free(length: u64, perm: *const u64, gs_length: u6
             .map(|g| Perm::from(Vec::from(g)))
             .collect();
 
-        println!("length: {}, gs_length: {}", length, gs_length);
-        println!("{:?}", in_perm);
-        println!("{:?}", in_gs);
-        println!("HELLO RUST");
+        // println!("length: {}, gs_length: {}", length, gs_length);
+        // println!("{:?}", in_perm);
+        // println!("{:?}", in_gs);
+        // println!("HELLO RUST");
         let retn = canonicalize_free_butler(&in_gs, in_perm);
 
-        println!("retn: {:?}", retn);
+        // println!("retn: {:?}", retn);
         for i in 0..length as isize {
             *out.offset(i) = retn.v[i as usize];
         }
-        println!("HELLO COPY DONE");
+        // println!("HELLO COPY DONE");
     }
 }
 

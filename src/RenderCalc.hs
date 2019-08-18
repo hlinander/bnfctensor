@@ -80,7 +80,7 @@ data Component
     | TensorIdent String String
     | IndexIdent ValenceType String String
 
-script = "<script>registerTensorHover();</script>"
+script = "<script>window.registerTensorHover();window.registerIndexHover();</script>"
 
 niceLabelML s = case s of
     "eta" -> "&eta;"
@@ -91,7 +91,6 @@ niceLabelConsole s = case s of
     "eta" -> "η"
     "delta" -> "ẟ"
     s -> s
-
 
 mathML :: Component -> String
 mathML StartOp      = "<mrow>\n"
@@ -116,8 +115,9 @@ mathML EndDown      = "</mi>"
 mathML StartNumber  = "<mn>"
 mathML EndNumber    = "</mn>"
 mathML (TensorIdent cs l) = "<mi mathvariant=\"bold\" class=\"tensor " ++ l ++ "\">" ++ niceLabelML l ++ "</mi>"
-mathML (IndexIdent Up cs l) = "<none/><mi>" ++ l ++ "</mi>"
-mathML (IndexIdent Down cs l) = "<mi>" ++ l ++ "</mi><none/>"
+--mathML (IndexIdent Up cs l) = "<none/><mi style=\"color:" ++ stringToColor l ++ "\">" ++ l ++ "</mi>"
+mathML (IndexIdent Up cs l) = "<none/><mi class=\"index " ++ l ++ "\">" ++ l ++ "</mi>"
+mathML (IndexIdent Down cs l) = "<mi class=\"index " ++ l ++ "\">" ++ l ++ "</mi><none/>"
 
 console :: Component -> String
 console StartOp      = ""

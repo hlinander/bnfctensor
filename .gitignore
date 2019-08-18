@@ -10,3 +10,6 @@ tensorkernel
 env/
 .ipynb_checkpoints/
 src/Frontend/
+target/
+.cabal-sandbox/
+dist/

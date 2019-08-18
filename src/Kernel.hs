@@ -49,7 +49,6 @@ parse s = pBook (tokens s)
 appendCalc :: BookState -> String -> Calc -> BookState
 appendCalc bs s c = bs
     {   bookCalcs = M.insert s c $ bookCalcs bs
-    -- ,   bookTensors = (tensorTypeFromCalc s c) : (bookTensors bs) }
     ,   bookTensors = M.insert (tensorName tensor) tensor (bookTensors bs) }
     where tensor = (tensorTypeFromCalc s c)
 

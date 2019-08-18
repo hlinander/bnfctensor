@@ -58,7 +58,7 @@ canonPerm bs c@(Prod p1 p2) = Prod (canonPerm bs p1) (canonPerm bs p2)
 canonPerm bs c@(Contract _ _ _) = c
 canonPerm bs (Sum s1 s2) = Sum (canonPerm bs s1) (canonPerm bs s2)
 canonPerm bs c@(Number _) = c
-canonPerm bs c = permToCalc cfree (traceShowId outPerm)
+canonPerm bs c = permToCalc cfree (outPerm)
   where frees = [1..(nFreeIndices c)]
         (perm, cfree, gs) = permData bs c
         -- permWithSign = perm ++ [length perm + 1, length perm + 2]
@@ -67,7 +67,7 @@ canonPerm bs c = permToCalc cfree (traceShowId outPerm)
 
 
 permToCalc :: Calc -> [Int] -> Calc
-permToCalc c perm = Prod sign (Permute (toPermutation $ traceShow lperm lperm) c)
+permToCalc c perm = Prod sign (Permute (toPermutation $ lperm) c)
   where lperm = map (flip (-) 2) $ drop 2 perm
         [s1, s2] = take 2 perm
         sign = if s2 > s1 then Number 1 else Number (-1)
@@ -98,7 +98,9 @@ distribute' c = case c of
     _ -> c
 
 simplify = fixPoint
-      (commuteContractPermute
+      (
+      commuteContractPermute
+    . (fixPoint collectTerms)
     . simplifyContract
     . eliminateMetrics
     . simplifyPermutations
@@ -227,7 +229,10 @@ simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
 simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
 simplifyFactors' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (Prod f1 f2) -- TODO: Duplicate rule
 simplifyFactors' (Prod (Number 1) f) = f
--- simplifyFactors' (Prod (Number 0) f) = Number 0
+simplifyFactors' (Prod (Number 0) f) = Tensor "⦸" (indexFromCalc f)
+simplifyFactors' (Prod (Number n) (Tensor "⦸" idx)) = Tensor "⦸" idx
+simplifyFactors' c@(Prod (Tensor "⦸" idx) f) = Tensor "⦸" (indexFromCalc c)
+simplifyFactors' c@(Prod f (Tensor "⦸" idx)) = Tensor "⦸" (indexFromCalc c)
 simplifyFactors' x = x
 
 simplifyPermutations :: Calc -> Calc
@@ -460,7 +465,7 @@ collectContractions' c cs = (contractions, c)
           where popOne (ps, conts) [c1, c2] | c2 > c1 = (ps'', n1:n2:conts)
                                                         where (ps', n2) = popAt c2 ps
                                                               (ps'', n1) = popAt c1 ps'
-                (_, contractions) = foldl (popOne) (emptyContractState $ nFreeIndices c) (traceShowId cs)
+                (_, contractions) = foldl (popOne) (emptyContractState $ nFreeIndices c) (cs)
 
 colCont :: Calc -> [Int] -> ([Int], [Int], Calc)
 colCont c p = colCont' c p []
