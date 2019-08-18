@@ -26,8 +26,8 @@ import System.IO.Unsafe
 data PrintMode = MathML | Console
 
 printCalc :: Printable p => PrintMode -> p -> String
-printCalc MathML o = (print MathML o) ++ script
-printCalc Console o = (print Console o)
+printCalc MathML o = print MathML o ++ script
+printCalc Console o = print Console o
 
 -- (script++) . (css++) .
 print :: Printable p => PrintMode -> p -> String
@@ -136,13 +136,14 @@ console EndTensor    = ""
 console IndexPH      = ""
 console StartUp      = "^"
 console StartDown    = "."
-console EndUp      = ""
-console EndDown    = ""
-console StartNumber  = ""
-console EndNumber    = ""
+console EndUp = ""
+console EndDown = ""
+console StartNumber = ""
+console EndNumber = ""
 console (TensorIdent cs l) = niceLabelConsole l
 console (IndexIdent Up cs l) = "^" ++ niceLabelConsole l
 console (IndexIdent Down cs l) = "." ++ niceLabelConsole l
+
 
 instance Printable Component where
     printML = mathML
@@ -154,10 +155,10 @@ type RenderState = FreeIndices
 infLabels = map (("a"++).show) ([1..] :: [Int])
 
 freeLabels :: [String]
-freeLabels = (map (:['\x0332']) ['a'..'z']) ++ infLabels
+freeLabels = map (:['\x0332']) ['a'..'z'] ++ infLabels
 
 dummyLabels :: [String]
-dummyLabels = (map (:[]) $ reverse ['a'..'z']) ++ infLabels
+dummyLabels = map (:[]) (reverse ['a'..'z']) ++ infLabels
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
@@ -177,23 +178,26 @@ opPrec = 6
 renderParen pred mode x = if pred then (print mode OpenParen) ++ x ++ (print mode CloseParen) else x
 renderOp mode x = (print mode StartOp) ++ x ++ (print mode EndOp)
 
-renderCalc' :: Int -> PrintMode -> Calc -> R.ReaderT RenderState (S.State [String]) String
-renderCalc' prec mode x = case x of
+renderCalc' ::
+     Int -> PrintMode -> Calc -> R.ReaderT RenderState (S.State [String]) String
+renderCalc' prec mode x =
+  case x of
     Sum s1 s2 -> do
-        rs1 <- (renderCalc' sumPrec mode) s1
-        rs2 <- (renderCalc' sumPrec mode) s2
-        let wrap =  renderOp mode . renderParen (prec > sumPrec) mode
-        return $ wrap (rs1 ++ (print mode Plus) ++ rs2)
+      rs1 <- (renderCalc' sumPrec mode) s1
+      rs2 <- (renderCalc' sumPrec mode) s2
+      let wrap = renderOp mode . renderParen (prec > sumPrec) mode
+      return $ wrap (rs1 ++ (print mode Plus) ++ rs2)
     -- Prod (Number n) f2 -> (++) <$> renderCalc' prec target (Number n) <*> renderCalc' prec target f2
     Prod f1 f2 -> do
-        frees <- R.ask
-        let freeSlots = map numFreeSlots [f1, f2]
-        let [free1, free2] = getFreesForFactors freeSlots frees
-        rf1 <- R.local (const free1) $ renderCalc' prodPrec mode f1
-        rf2 <- R.local (const free2) $ renderCalc' prodPrec mode f2
-        let wrap = renderOp mode . renderParen (prec > prodPrec) mode
-        return $ wrap (rf1 ++ (print mode Times) ++ rf2)
-    Contract i1 i2 t | i1 < i2 -> do
+      frees <- R.ask
+      let freeSlots = map numFreeSlots [f1, f2]
+      let [free1, free2] = getFreesForFactors freeSlots frees
+      rf1 <- R.local (const free1) $ renderCalc' prodPrec mode f1
+      rf2 <- R.local (const free2) $ renderCalc' prodPrec mode f2
+      let wrap = renderOp mode . renderParen (prec > prodPrec) mode
+      return $ wrap (rf1 ++ (print mode Times) ++ rf2)
+    Contract i1 i2 t
+      | i1 < i2 -> do
         oldState <- S.get
         let newState = drop 1 oldState
         let dummy = head oldState
@@ -201,45 +205,51 @@ renderCalc' prec mode x = case x of
         frees <- R.ask
         let newFrees = insertAt i2 dummy $ insertAt i1 dummy frees
         R.local (const newFrees) (renderCalc' prec mode t)
-    Contract i1 i2 c | i1 > i2 -> renderCalc' prec mode (Contract i2 i1 c)
+    Contract i1 i2 c
+      | i1 > i2 -> renderCalc' prec mode (Contract i2 i1 c)
     Number n ->
-        case q of
-            1 -> return $ target StartNumber ++ show p ++ target EndNumber
-            _ -> return $ target StartFrac ++ show p ++ target MidFrac ++ show q ++ target EndFrac
+      case q of
+        1 -> return $ target StartNumber ++ show p ++ target EndNumber
+        _ ->
+          return $
+          target StartFrac ++
+          show p ++ target MidFrac ++ show q ++ target EndFrac
       where p = numerator n
             q = denominator n
             target = print mode
     Permute p c -> do
-        localFrees <- R.ask
-        let newFrees = P.permuteList p localFrees
-        R.local (const newFrees) $ renderCalc' prec mode c
+      localFrees <- R.ask
+      let newFrees = P.permuteList p localFrees
+      R.local (const newFrees) $ renderCalc' prec mode c
     Tensor name [] -> return $ print mode (TensorIdent name name)
     Tensor name indices -> do
-        localFrees <- R.ask
-        let theIndices = zip localFrees indices
-        let open = (print mode StartTensor)
-        let indicesString = concatMap (renderIndex mode) theIndices
-        let close = (print mode EndTensor)
-        return $ open ++ print mode (TensorIdent name name) ++ indicesString ++ close
+      localFrees <- R.ask
+      let theIndices = zip localFrees indices
+      let open = (print mode StartTensor)
+      let indicesString = concatMap (renderIndex mode) theIndices
+      let close = (print mode EndTensor)
+      return $
+        open ++ print mode (TensorIdent name name) ++ indicesString ++ close
     Op name [] calc -> do
-        calcString <- renderCalc' opPrec mode calc
-        return $ print mode (TensorIdent name name) ++ calcString
-    Op name indices calc -> do
-        localFrees <- R.ask
-        let opPreIndices = take (length indices) localFrees
-        let newLocalFrees = drop (length indices) localFrees
-        calcString <- R.local (const newLocalFrees) $ renderCalc' opPrec mode calc
-        let opIndices_ = zip opPreIndices indices
-        let open = (print mode StartTensor)
-        let nameString = print mode (TensorIdent name name)
-        let indicesString = concatMap (renderIndex mode) opIndices_
-        let close = (print mode EndTensor)
-        return $ open ++ nameString ++ indicesString ++ close ++ calcString
+      calcString <- renderCalc' opPrec mode calc
+      return $ print mode (TensorIdent name name) ++ calcString
+    Op name indices calc -> do 
+      localFrees <- R.ask
+      let opPreIndices = take (length indices) localFrees
+      let newLocalFrees = drop (length indices) localFrees
+      calcString <- R.local (const newLocalFrees) $ renderCalc' opPrec mode calc
+      let opIndices_ = zip opPreIndices indices
+      let open = (print mode StartTensor)
+      let nameString = print mode (TensorIdent name name)
+      let indicesString = concatMap (renderIndex mode) opIndices_
+      let close = (print mode EndTensor)
+      return $ open ++ nameString ++ indicesString ++ close ++ calcString
     _ -> undefined
 
+
 renderIndex :: PrintMode -> (String, Index) -> String
-renderIndex mode (label, Index{indexValence=Up}) = (print mode (IndexIdent Up label label))
-renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent Down label label))
+renderIndex mode (label, Index{indexValence=Up}) = print mode (IndexIdent Up label label)
+renderIndex mode (label, Index{indexValence=Down}) = print mode (IndexIdent Down label label)
 -- renderIndex mode (label, Index{indexValence=Up}) = (print mode IndexPH) ++ (print mode (IndexIdent label label))
 -- renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent label label)) ++ (print mode IndexPH)
 
@@ -250,7 +260,7 @@ numFreeSlots x = case x of
     Contract _ _ expr -> numFreeSlots expr - 2
     Tensor _ idxs -> length idxs
     Permute _ t -> numFreeSlots t
-    Op _ idxs c -> (length idxs) + numFreeSlots c
+    Op _ idxs c -> length idxs + numFreeSlots c
     _ -> 0
 
 renderTree :: Calc -> String
@@ -262,16 +272,27 @@ calcToTree :: Calc -> Tree String
 calcToTree c = calcToTree' c []
 
 calcToTree' :: Calc -> [Int] -> Tree String
-calcToTree' (Sum t1 t2) p = Node ("(+)" ++ showPos p) [calcToTree' t1 (p ++ [0]), calcToTree' t2 (p ++ [1])]
-calcToTree' (Prod f1 f2) p = Node ("(*)" ++ showPos p) [calcToTree' f1 (p ++ [0]), calcToTree' f2 (p ++ [1])]
-calcToTree' (Permute p c) pos = Node (show p ++ showPos pos) [calcToTree' c (pos ++ [0])]
-calcToTree' (Contract i1 i2 c) p = Node ("Contract " ++ show i1 ++ " <-> " ++ show i2 ++ showPos p) [calcToTree' c (p ++ [0])]
-calcToTree' (Op l idx c) p = Node (l ++ "[" ++ show idx ++ "]" ++ showPos p) [calcToTree' c (p ++ [0])]
+calcToTree' (Sum t1 t2) p =
+  Node
+    ("(+)" ++ showPos p)
+    [calcToTree' t1 (p ++ [0]), calcToTree' t2 (p ++ [1])]
+calcToTree' (Prod f1 f2) p =
+  Node
+    ("(*)" ++ showPos p)
+    [calcToTree' f1 (p ++ [0]), calcToTree' f2 (p ++ [1])]
+calcToTree' (Permute p c) pos =
+  Node (show p ++ showPos pos) [calcToTree' c (pos ++ [0])]
+calcToTree' (Contract i1 i2 c) p =
+  Node
+    ("Contract " ++ show i1 ++ " <-> " ++ show i2 ++ showPos p)
+    [calcToTree' c (p ++ [0])]
+calcToTree' (Op l idx c) p =
+  Node (l ++ "[" ++ show idx ++ "]" ++ showPos p) [calcToTree' c (p ++ [0])]
 calcToTree' t@(Tensor _ _) p = Node (renderConsole t ++ showPos p) []
 calcToTree' x p = Node (show x ++ showPos p) []
+
 
 showPos p = " Pos: " ++ show p
 
 renderTreeRepl :: Calc -> Calc
-renderTreeRepl c = unsafePerformIO $ do
-  putStrLn (renderTree c) >> return c
+renderTreeRepl c = unsafePerformIO $ putStrLn (renderTree c) >> return c

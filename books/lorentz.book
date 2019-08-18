@@ -18,4 +18,4 @@ var V' = L^a.b V^b;
 var zero1 = L.a^m L.b^n g.m.n - g.a.b;
 var zero2 = distribute!(simp!(zero1));
 var zero3 = distribute!(simp!(zero2));
-var zerp4 = collect!(simp!(canon!(zero3)));
+var zero4 = simp!(canon!(zero3));
