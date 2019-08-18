@@ -6,6 +6,7 @@ module Eval (
 ) where
 
 import Control.Monad.Reader
+import qualified Data.Map as M
 
 import Core
 import RenderCalc
@@ -61,6 +62,6 @@ handleStmts bs (st:sts) = do
 
 --bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
-    where tensors = map tensorName $ bookTensors bs
+    where tensors = M.keys $ bookTensors bs
           funcs = map funcName $ bookFuncs bs
           ops = map opName $ bookOps bs

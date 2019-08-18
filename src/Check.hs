@@ -155,9 +155,9 @@ checkTensorDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
 checkTensorDecl (Label s) indices = do
     tensorType <- findDeclTensor s
     case tensorType of
-        [] -> fail $ "Tensor " ++ s ++ " not declared"
-        ((TensorType _ defIndices) : []) | length defIndices == length indices -> return ()
-        ((TensorType _ defIndices) : []) -> fail $ "Tensor " ++ s ++ " used with wrong rank, expected " ++ (show defIndices)
+        Nothing -> fail $ "Tensor " ++ s ++ " not declared"
+        Just (TensorType _ defIndices) | length defIndices == length indices -> return ()
+        Just (TensorType _ defIndices) -> fail $ "Tensor " ++ s ++ " used with wrong rank, expected " ++ (show defIndices)
         _ -> fail $ "Tensor " ++ s ++ " declared multiple times"
 
 checkOpDecl :: Label -> [Index] -> ReaderT [Index] (StateT BookState Err) ()
@@ -169,10 +169,10 @@ checkOpDecl (Label s) indices = do
         ((OpType _ _) : []) -> fail $ "Op " ++ s ++ " used with wrong rank"
         _ -> fail $ "Op " ++ s ++ " declared multiple times"
 
-findDeclTensor :: String -> ReaderT [Index] (StateT BookState Err) [TensorType]
+findDeclTensor :: String -> ReaderT [Index] (StateT BookState Err) (Maybe TensorType)
 findDeclTensor s = do
     bookState <- get
-    return $ filter (\t -> tensorName t == s) (bookTensors bookState)
+    return $ M.lookup s (bookTensors bookState)
 
 findDeclOp :: String -> ReaderT [Index] (StateT BookState Err) [OpType]
 findDeclOp s = do
@@ -200,19 +200,21 @@ anonymousAppend c = get >>= flip calcAppend c . nextAnonymous
 calcAppend :: Monad m => String -> Calc -> StateT BookState m ()
 calcAppend s c = modify(\t -> t {
     bookCalcs = M.insert s c $ bookCalcs t,
-    bookTensors = (tensorTypeFromCalc s c) : (bookTensors t)
+    -- bookTensors = (tensorTypeFromCalc s c) : (bookTensors t)
+    bookTensors = M.insert s (tensorTypeFromCalc s c) $ (bookTensors t)
 })
 
 metricAppend :: Monad m => ReprType -> TensorType -> StateT BookState m ()
 metricAppend r t = modify(\bs -> bs {
     bookTensors = case lookupTensor (tensorName t) bs of
         Just _ -> bookTensors bs
-        Nothing ->(t : bookTensors bs),
+        -- Nothing -> (t : bookTensors bs),
+        Nothing -> M.insert (tensorName t) t $ bookTensors bs,
     bookMetrics = M.insert r t $ bookMetrics bs
 })
 
 tensorAppend :: Monad m => TensorType -> StateT BookState m ()
-tensorAppend tensor = modify (\t -> t { bookTensors = tensor : bookTensors t })
+tensorAppend tensor = modify (\t -> t { bookTensors = M.insert (tensorName tensor) tensor $ bookTensors t })
 
 opAppend :: Monad m => OpType -> StateT BookState m ()
 opAppend op = modify (\t -> t { bookOps = op : bookOps t })

@@ -63,7 +63,7 @@ type ReplState = (BookState, [String])
 
 bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
-    where tensors = L.map tensorName $ bookTensors bs
+    where tensors = M.keys $ bookTensors bs
           funcs = L.map funcName $ bookFuncs bs
           ops = L.map opName $ bookOps bs
 

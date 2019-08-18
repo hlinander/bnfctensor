@@ -28,13 +28,13 @@ tensor: Main.hs XPerm.hs $(HSMODULES)
 	ghc --make $< $(LDOPTS) -static -o tensor
 
 test: Test.hs $(HSMODULES)
-	runhaskell RunTest.hs --ghc-arg="-lstdc++ -fobject-code"
-
+	runhaskell RunTest.hs --ghc-arg="$(LDOPTS)"
+	
 docker: Main.hs $(HSMODULES)
 	docker run --rm -v $(PWD)/../:/bnfctensor -w /bnfctensor/src bnfctensor:latest make tensor
 
 docker-test: Test.hs $(HSMODULES)
-	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor bnfctensor:latest make test
+	docker run --rm -v $(PWD)/../:/bnfctensor -w /bnfctensor/src bnfctensor:latest make test
 
 docker-ghcid:
 	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor/src bnfctensor:latest ghcid "--command=ghci -lstdc++ -fobject-code" 

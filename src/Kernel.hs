@@ -49,7 +49,9 @@ parse s = pBook (tokens s)
 appendCalc :: BookState -> String -> Calc -> BookState
 appendCalc bs s c = bs
     {   bookCalcs = M.insert s c $ bookCalcs bs
-    ,   bookTensors = (tensorTypeFromCalc s c) : (bookTensors bs) }
+    -- ,   bookTensors = (tensorTypeFromCalc s c) : (bookTensors bs) }
+    ,   bookTensors = M.insert (tensorName tensor) tensor (bookTensors bs) }
+    where tensor = (tensorTypeFromCalc s c)
 
 runKernel :: MVar BookState -> T.Text -> IO () -> (String -> IO ()) -> IO (String, ExecuteReplyStatus, String)
 runKernel mbs input _ _ = case parse $ T.unpack input of
@@ -65,7 +67,7 @@ runKernel mbs input _ _ = case parse $ T.unpack input of
 
 bookstateCompletion :: BookState -> [String]
 bookstateCompletion bs = tensors ++ funcs ++ ops
-    where tensors = map tensorName $ bookTensors bs
+    where tensors = M.keys $ bookTensors bs
           funcs = map funcName $ bookFuncs bs
           ops = map opName $ bookOps bs
 

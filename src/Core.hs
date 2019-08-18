@@ -83,8 +83,9 @@ data FunctionType = FunctionType {
 } deriving (Show, Eq)
 
 data BookState = BookState {
-    -- bookTensors :: M.Map TensorName TensorType,
-    bookTensors :: [TensorType],
+    bookTensors :: M.Map TensorName TensorType,
+    -- bookTensors :: M.Map String TensorType,
+    -- bookTensors :: [TensorType],
     bookOps :: [OpType],
     bookFuncs :: [FunctionType],
     bookCalcs :: M.Map String Calc,
@@ -102,9 +103,14 @@ currentAnonymous :: BookState -> String
 currentAnonymous = ('$':) . show . flip (-) 1 . nextAnonymousId
 
 emptyBook :: BookState
-emptyBook = BookState [] [] [] (M.fromList []) (M.fromList [])
+emptyBook = BookState (M.fromList []) [] [] (M.fromList []) (M.fromList [])
 
-lookupMetric' :: e-> ReprType -> BookState -> Either e TensorType
+-- lookupGeneratingSet :: TensorType -> [Permutation]
+-- lookupGeneratingSet t = map (uncurry concatPermutations) (zip sg ig)
+--     where sg = map signSymmetry (tensorSymmetries t)
+--           ig = map indexSymmetry (tensorSymmetries t)
+
+lookupMetric' :: e -> ReprType -> BookState -> Either e TensorType
 lookupMetric' e r = (maybeToEither e) . lookupMetric r
 
 lookupMetric :: ReprType -> BookState -> Maybe TensorType
@@ -114,7 +120,8 @@ lookupTensor' :: e -> String -> BookState -> Either e TensorType
 lookupTensor' e s = (maybeToEither e) . lookupTensor s
 
 lookupTensor :: String -> BookState -> Maybe TensorType
-lookupTensor l bs = listToMaybe $ filter (\t -> tensorName t == l) $ bookTensors bs
+-- lookupTensor l bs = listToMaybe $ filter (\t -> tensorName t == l) $ bookTensors bs
+lookupTensor l bs = M.lookup l (bookTensors bs)
 
 lookupOp :: String -> BookState -> Maybe OpType
 lookupOp l bs = listToMaybe $ filter (\t -> opName t == l) $ bookOps bs
