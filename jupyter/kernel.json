@@ -1,0 +1,5 @@
+{
+	"display_name":"Tensor",
+	"argv": ["docker", "run", "--rm", "--network", "host", "-v", "/home/herden/projects/bnfctensor/:/bnfctensor", "-v", "/run:/run", "-w", "/bnfctensor/src","-e", "LD_LIBRARY_PATH=/bnfctensor/canonicalize", "bnfctensor:latest", "./tensorkernel","run","{connection_file}"],
+	"language":"tensor"
+}
