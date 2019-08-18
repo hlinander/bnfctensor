@@ -16,6 +16,7 @@ import Transform
 import qualified Frontend.AbsTensor as Abs
 import RenderCalc
 import qualified Util as U
+import RustPerm
 
 instance Arbitrary Calc where
     shrink = shrinkCalc

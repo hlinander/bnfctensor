@@ -10,6 +10,9 @@ build-docker:
 	docker build -f docker/Dockerfile docker/ -t bnfctensor
 	docker build -f docker/Dockerfile.debug docker/ -t bnfctensor:debug
 
+ghcid:
+	(cd src && make docker-ghcid)
+
 ghci:
 	(cd src && make docker-ghci)
 

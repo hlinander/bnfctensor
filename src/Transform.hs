@@ -18,7 +18,7 @@ import System.IO.Unsafe
 import Core
 import RenderCalc
 import Util
--- import RustPerm
+import RustPerm
 import Foreign.Ptr
 
 
@@ -36,7 +36,7 @@ execute "collect" (c:[]) = fixPoint collectTerms c
 execute "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
--- execute "winperm" (c:[]) = seq (unsafePerformIO $ winPerm nullPtr nullPtr) (Number 1)
+execute "canon" (c:[]) = canonPerm c
 execute _ (c:rest) = c
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -51,6 +51,27 @@ fixPoint' n f c = case n of
 
 showCalc :: Calc -> Calc
 showCalc c = traceShowId c
+
+canonPerm :: Calc -> Calc
+canonPerm (Sum s1 s2) = Sum (canonPerm s1) (canonPerm s2)
+canonPerm c = permToCalc cfree (traceShowId outPerm)
+  where frees = [1..(nFreeIndices c)]
+        (perm, cfree) = permData c
+        -- permWithSign = perm ++ [length perm + 1, length perm + 2]
+        permWithSign = [1,2] ++ (map ((+) 2) perm)
+        gs = generatingSet cfree
+        outPerm = canonicalizeFree permWithSign gs
+
+
+permToCalc :: Calc -> [Int] -> Calc
+permToCalc c perm = Prod sign (Permute (toPermutation $ traceShow lperm lperm) c)
+  where lperm = map (flip (-) 2) $ drop 2 perm
+        [s1, s2] = take 2 perm
+        sign = if s2 > s1 then Number 1 else Number (-1)
+
+permData :: Calc -> ([Int], Calc)
+permData (Permute p c) = (fromPermutation p, c)
+permData c = ([1..(nFreeIndices c)], c)
 
 -----------------------------------------------------------------------
 -- Basic algebraic convenience

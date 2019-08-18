@@ -220,13 +220,21 @@ mod tests {
         assert_eq!(vinst3, Perm::from(vec!(0, 1, 2)));
     }
 
-    // #[test]
-    fn test_canonicalize_free_butler_example7() {
-        let g = vec![Perm::from(vec![0, 1, 3, 2]), Perm::from(vec![2, 3, 0, 1])];
-        // let sgs = create_sgs(GeneratingSet{ g: gs.clone() });
-        let vinst = canonicalize_free_butler(&g, Perm::from(vec![1, 2, 0, 3]));
-        assert_eq!(vinst, Perm::from(vec!(0, 3, 2, 1)));
+     #[test]
+    fn test_canonicalize_free_butler_basic() {
+        let g = vec![Perm::from(vec![1, 0, 3, 2])];
+        // let vinst = canonicalize_free_butler(&g, Perm::from(vec![1, 0, 2, 3]));
+        let vinst = canonicalize_free_butler(&g, Perm::from(vec![0, 1, 3, 2]));
+        assert_eq!(vinst, Perm::from(vec!(1, 0, 2, 3)));
     }
+
+    //  #[test]
+    // fn test_canonicalize_free_butler_example7() {
+    //     let g = vec![Perm::from(vec![0, 1, 3, 2]), Perm::from(vec![2, 3, 0, 1])];
+    //     // let sgs = create_sgs(GeneratingSet{ g: gs.clone() });
+    //     let vinst = canonicalize_free_butler(&g, Perm::from(vec![1, 2, 0, 3]));
+    //     assert_eq!(vinst, Perm::from(vec!(0, 3, 2, 1)));
+    // }
 }
 
 #[no_mangle]
@@ -234,6 +242,39 @@ pub extern "C" fn canonicalize(perm: *const perm_t, out: *mut u8) -> () {
     unsafe {
         println!("HELLO RUST");
         // *out = 0x10;
+    }
+}
+
+// length: u64,
+// dummies_length: u64,
+// frees_length: u64,
+// window_size: u64,
+// perm: *const u64,
+// generating_set: *const u64,
+// frees: *const u64,
+// dummies: *const u64,
+
+#[no_mangle]
+pub extern "C" fn canonicalize_free(length: u64, perm: *const u64, gs_length: u64, gs: *const u64, out: *mut u64) -> () {
+    unsafe {
+        let p_slice = std::slice::from_raw_parts(perm, length as usize);
+        let in_perm = Perm::from(Vec::from(p_slice));
+        let gs_slice = std::slice::from_raw_parts(gs, (length * gs_length) as usize);
+        let in_gs: Vec<Perm> = gs_slice.chunks(length as usize)
+            .map(|g| Perm::from(Vec::from(g)))
+            .collect();
+
+        println!("length: {}, gs_length: {}", length, gs_length);
+        println!("{:?}", in_perm);
+        println!("{:?}", in_gs);
+        println!("HELLO RUST");
+        let retn = canonicalize_free_butler(&in_gs, in_perm);
+
+        println!("retn: {:?}", retn);
+        for i in 0..length as isize {
+            *out.offset(i) = retn.v[i as usize];
+        }
+        println!("HELLO COPY DONE");
     }
 }
 
