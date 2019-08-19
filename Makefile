@@ -6,6 +6,8 @@ DOCKERLIB = -e "LD_LIBRARY_PATH=/bnfctensor/canonicalize"
 DOCKERDEBUG = --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
 DOCKER = --rm -it -u $(UID):$(GID) -v $(PWD):/bnfctensor -w /bnfctensor/src $(DOCKERLIB) bnfctensor:latest
 
+JUPYTER_KERNEL_PATH = $(HOME)/.local/share/jupyter/kernels/bnfctensor
+
 all:
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest make
 
@@ -33,3 +35,12 @@ term:
 
 test:
 	(cd src && make docker-test)
+
+install-jupyter:
+	mkdir -p $(JUPYTER_KERNEL_PATH)
+	BNFCTENSOR=$(PWD) envsubst < jupyter/kernel.env.json > $(JUPYTER_KERNEL_PATH)/kernel.json
+	cp jupyter/kernel.js $(JUPYTER_KERNEL_PATH)/kernel.js
+	cp jupyter/kernel.css $(JUPYTER_KERNEL_PATH)/kernel.css
+
+jupyter: install-jupyter
+	jupyter-notebook --browser=firefox
