@@ -12,11 +12,13 @@ RUN cabal install tree-view
 RUN cabal install inline-c
 RUN cabal install inline-c-cpp
 RUN apt-get update && apt-get install -y gdb
-RUN apt-get install -y cargo
+#RUN apt-get install -y cargo
 RUN cabal install ghcid
-RUN git clone https://github.com/haskell/haskell-ide-engine --recurse-submodules /hie
-WORKDIR /hie
+#RUN git clone https://github.com/haskell/haskell-ide-engine --recurse-submodules /hie
+#WORKDIR /hie
 #RUN stack ./install.hs hie-8.6.5
 #RUN stack ./install.hs build-data
 # RUN make hie-8.6.3
 # RUN make build-doc-8.6.3
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+ENV PATH=/root/.cargo/bin:$PATH

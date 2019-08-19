@@ -4,7 +4,7 @@ all:
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest make
 
 clean:
-	(cd src && make clean)
+	(cd src && make docker-clean)
 
 build-docker:
 	docker build -f docker/Dockerfile docker/ -t bnfctensor
