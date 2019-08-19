@@ -6,3 +6,7 @@ libcanonicalize.so: target/debug/libcanonicalize.so
 
 target/debug/libcanonicalize.so: src/lib.rs
 	cargo build
+
+clean:
+	cargo clean
+	-rm -f libcanonicalize.so
