@@ -1,14 +1,13 @@
 {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 
-
-module RenderCalc (
-    renderConsole,
-    renderMathML,
-    Printable(..),
-    PrintMode(..),
-    printCalc,
-    renderTreeRepl
-) where
+module RenderCalc
+  ( renderConsole
+  , renderMathML
+  , Printable(..)
+  , PrintMode(..)
+  , printCalc
+  , renderTreeRepl
+  ) where
 
 import Data.Ratio
 import Data.Tree
@@ -18,12 +17,14 @@ import qualified Control.Monad.Reader as R
 import qualified Control.Monad.State as S
 
 import Core
-import Util
-import Prelude hiding ( print )
-import Frontend.AbsTensor ( DocString(..) )
+import Frontend.AbsTensor (DocString(..))
+import Prelude hiding (print)
 import System.IO.Unsafe
+import Util
 
-data PrintMode = MathML | Console
+data PrintMode
+  = MathML
+  | Console
 
 printCalc :: Printable p => PrintMode -> p -> String
 printCalc MathML o = print MathML o ++ script
@@ -35,20 +36,22 @@ print MathML = printML
 print Console = printConsole
 
 class Printable p where
-    printML :: p -> String
-    printConsole :: p -> String
+  printML :: p -> String
+  printConsole :: p -> String
 
 instance Printable Calc where
-    printML = renderMathML
-    printConsole = renderConsole
+  printML = renderMathML
+  printConsole = renderConsole
 
 instance Printable String where
-    printML s = "<span style=\"white-space: pre; font-family: monospace;\">" ++ s ++ "</span>"
-    printConsole = id
+  printML s =
+    "<span style=\"white-space: pre; font-family: monospace;\">" ++
+    s ++ "</span>"
+  printConsole = id
 
 instance Printable DocString where
-    printML (DocString s) = "<strong>" ++ s ++ "</strong><br>"
-    printConsole (DocString s) = s
+  printML (DocString s) = "<strong>" ++ s ++ "</strong><br>"
+  printConsole (DocString s) = s
 
 renderConsole :: Calc -> String
 renderConsole = flip renderCalc Console
@@ -57,85 +60,95 @@ renderMathML :: Calc -> String
 renderMathML c = "<math>" ++ (renderCalc c MathML) ++ "</math><br>"
 
 data Component
-    = StartOp
-    | EndOp
-    | Plus
-    | Times
-    | OpenParen
-    | CloseParen
-    | StartFrac
-    | MidFrac
-    | EndFrac
-    | StartTensor
-    | StartIdent
-    | EndIdent
-    | EndTensor
-    | IndexPH
-    | StartUp
-    | StartDown
-    | EndUp
-    | EndDown
-    | StartNumber
-    | EndNumber
-    | TensorIdent String String
-    | IndexIdent ValenceType String String
+  = StartOp
+  | EndOp
+  | Plus
+  | Times
+  | OpenParen
+  | CloseParen
+  | StartFrac
+  | MidFrac
+  | EndFrac
+  | StartTensor
+  | StartIdent
+  | EndIdent
+  | EndTensor
+  | IndexPH
+  | StartUp
+  | StartDown
+  | EndUp
+  | EndDown
+  | StartNumber
+  | EndNumber
+  | TensorIdent String
+                String
+  | IndexIdent ValenceType
+               String
+               String
 
-script = "<script>window.registerTensorHover();window.registerIndexHover();</script>"
+script =
+  "<script>window.registerTensorHover();window.registerIndexHover();</script>"
 
-niceLabelML s = case s of
+niceLabelML s =
+  case s of
     "eta" -> "&eta;"
     "delta" -> "&delta;"
     s -> s
 
-niceLabelConsole s = case s of
+niceLabelConsole s =
+  case s of
     "eta" -> "η"
     "delta" -> "ẟ"
     s -> s
 
 mathML :: Component -> String
-mathML StartOp      = "<mrow>\n"
-mathML EndOp        = "</mrow>\n"
-mathML Plus         = "<mo>+</mo>\n"
+mathML StartOp = "<mrow>\n"
+mathML EndOp = "</mrow>\n"
+mathML Plus = "<mo>+</mo>\n"
 --mathML Times        = "<mo>⊗</mo>"
-mathML Times        = "<mo></mo>"
-mathML OpenParen    = "<mo>(</mo>\n"
-mathML CloseParen   = "<mo>)</mo>\n"
-mathML StartFrac    = "<mfrac><mi>"
-mathML MidFrac      = "</mi><mi>"
-mathML EndFrac      = "</mi></mfrac>"
-mathML StartTensor  = "<mmultiscripts>\n"
-mathML StartIdent   = "<mi>"
-mathML EndIdent     = "</mi>"
-mathML EndTensor    = "\n</mmultiscripts>"
-mathML IndexPH      = "<none/>"
-mathML StartUp      = "<mi>"
-mathML StartDown    = "<mi>"
-mathML EndUp        = "</mi>"
-mathML EndDown      = "</mi>"
-mathML StartNumber  = "<mn>"
-mathML EndNumber    = "</mn>"
-mathML (TensorIdent cs l) = "<mi mathvariant=\"bold\" class=\"tensor " ++ l ++ "\">" ++ niceLabelML l ++ "</mi>"
+mathML Times = "<mo></mo>"
+mathML OpenParen = "<mo>(</mo>\n"
+mathML CloseParen = "<mo>)</mo>\n"
+mathML StartFrac = "<mfrac><mi>"
+mathML MidFrac = "</mi><mi>"
+mathML EndFrac = "</mi></mfrac>"
+mathML StartTensor = "<mmultiscripts>\n"
+mathML StartIdent = "<mi>"
+mathML EndIdent = "</mi>"
+mathML EndTensor = "\n</mmultiscripts>"
+mathML IndexPH = "<none/>"
+mathML StartUp = "<mi>"
+mathML StartDown = "<mi>"
+mathML EndUp = "</mi>"
+mathML EndDown = "</mi>"
+mathML StartNumber = "<mn>"
+mathML EndNumber = "</mn>"
+mathML (TensorIdent cs l) =
+  "<mi mathvariant=\"bold\" class=\"tensor " ++
+  l ++ "\">" ++ niceLabelML l ++ "</mi>"
 --mathML (IndexIdent Up cs l) = "<none/><mi style=\"color:" ++ stringToColor l ++ "\">" ++ l ++ "</mi>"
-mathML (IndexIdent Up cs l) = "<none/><mi class=\"index " ++ l ++ "\">" ++ l ++ "</mi>"
-mathML (IndexIdent Down cs l) = "<mi class=\"index " ++ l ++ "\">" ++ l ++ "</mi><none/>"
+mathML (IndexIdent Up cs l) =
+  "<none/><mi class=\"index " ++ l ++ "\">" ++ l ++ "</mi>"
+mathML (IndexIdent Down cs l) =
+  "<mi class=\"index " ++ l ++ "\">" ++ l ++ "</mi><none/>"
 
 console :: Component -> String
-console StartOp      = ""
-console EndOp        = ""
-console Plus         = " + "
-console Times        = " ⊗ "
-console OpenParen    = "("
-console CloseParen   = ")"
-console StartFrac    = "("
-console MidFrac      = "/"
-console EndFrac      = ")"
-console StartTensor  = ""
-console StartIdent   = ""
-console EndIdent     = ""
-console EndTensor    = ""
-console IndexPH      = ""
-console StartUp      = "^"
-console StartDown    = "."
+console StartOp = ""
+console EndOp = ""
+console Plus = " + "
+console Times = " ⊗ "
+console OpenParen = "("
+console CloseParen = ")"
+console StartFrac = "("
+console MidFrac = "/"
+console EndFrac = ")"
+console StartTensor = ""
+console StartIdent = ""
+console EndIdent = ""
+console EndTensor = ""
+console IndexPH = ""
+console StartUp = "^"
+console StartDown = "."
 console EndUp = ""
 console EndDown = ""
 console StartNumber = ""
@@ -144,38 +157,47 @@ console (TensorIdent cs l) = niceLabelConsole l
 console (IndexIdent Up cs l) = "^" ++ niceLabelConsole l
 console (IndexIdent Down cs l) = "." ++ niceLabelConsole l
 
-
 instance Printable Component where
-    printML = mathML
-    printConsole = console
+  printML = mathML
+  printConsole = console
 
 type FreeIndices = [String]
+
 type RenderState = FreeIndices
 
-infLabels = map (("a"++).show) ([1..] :: [Int])
+infLabels = map (("a" ++) . show) ([1 ..] :: [Int])
 
 freeLabels :: [String]
-freeLabels = map (:['\x0332']) ['a'..'z'] ++ infLabels
+freeLabels = map (: ['\x0332']) ['a' .. 'z'] ++ infLabels
 
 dummyLabels :: [String]
-dummyLabels = map (:[]) (reverse ['a'..'z']) ++ infLabels
+dummyLabels = map (: []) (reverse ['a' .. 'z']) ++ infLabels
 
 emptyRenderEnv :: RenderState
 emptyRenderEnv = freeLabels
 
 renderCalc :: Calc -> PrintMode -> String
-renderCalc x m = fst $ S.runState (R.runReaderT (renderCalc' 0 m x) emptyRenderEnv) dummyLabels
+renderCalc x m =
+  fst $ S.runState (R.runReaderT (renderCalc' 0 m x) emptyRenderEnv) dummyLabels
 
 getFreesForFactors :: [Int] -> [String] -> [[String]]
 getFreesForFactors freeSlots frees = freesFactors
-    where reduce (ff, remaining) nFree = (ff ++ [take nFree remaining], drop nFree remaining)
-          (freesFactors, _) = foldl reduce ([], frees) freeSlots
+  where
+    reduce (ff, remaining) nFree =
+      (ff ++ [take nFree remaining], drop nFree remaining)
+    (freesFactors, _) = foldl reduce ([], frees) freeSlots
 
 sumPrec = 4
+
 prodPrec = 5
+
 opPrec = 6
 
-renderParen pred mode x = if pred then (print mode OpenParen) ++ x ++ (print mode CloseParen) else x
+renderParen pred mode x =
+  if pred
+    then (print mode OpenParen) ++ x ++ (print mode CloseParen)
+    else x
+
 renderOp mode x = (print mode StartOp) ++ x ++ (print mode EndOp)
 
 renderCalc' ::
@@ -233,7 +255,7 @@ renderCalc' prec mode x =
     Op name [] calc -> do
       calcString <- renderCalc' opPrec mode calc
       return $ print mode (TensorIdent name name) ++ calcString
-    Op name indices calc -> do 
+    Op name indices calc -> do
       localFrees <- R.ask
       let opPreIndices = take (length indices) localFrees
       let newLocalFrees = drop (length indices) localFrees
@@ -246,15 +268,17 @@ renderCalc' prec mode x =
       return $ open ++ nameString ++ indicesString ++ close ++ calcString
     _ -> undefined
 
-
 renderIndex :: PrintMode -> (String, Index) -> String
-renderIndex mode (label, Index{indexValence=Up}) = print mode (IndexIdent Up label label)
-renderIndex mode (label, Index{indexValence=Down}) = print mode (IndexIdent Down label label)
+renderIndex mode (label, Index {indexValence = Up}) =
+  print mode (IndexIdent Up label label)
+renderIndex mode (label, Index {indexValence = Down}) =
+  print mode (IndexIdent Down label label)
+
 -- renderIndex mode (label, Index{indexValence=Up}) = (print mode IndexPH) ++ (print mode (IndexIdent label label))
 -- renderIndex mode (label, Index{indexValence=Down}) = (print mode (IndexIdent label label)) ++ (print mode IndexPH)
-
 numFreeSlots :: Calc -> Int
-numFreeSlots x = case x of
+numFreeSlots x =
+  case x of
     Prod f1 f2 -> numFreeSlots f1 + numFreeSlots f2
     Sum s1 _ -> numFreeSlots s1
     Contract _ _ expr -> numFreeSlots expr - 2
@@ -290,7 +314,6 @@ calcToTree' (Op l idx c) p =
   Node (l ++ "[" ++ show idx ++ "]" ++ showPos p) [calcToTree' c (p ++ [0])]
 calcToTree' t@(Tensor _ _) p = Node (renderConsole t ++ showPos p) []
 calcToTree' x p = Node (show x ++ showPos p) []
-
 
 showPos p = " Pos: " ++ show p
 
