@@ -1,4 +1,4 @@
-.PHONY: all clean docker-ghci docker docker-ghci-debug docker-test test tensor tensorkernel xperm
+.PHONY: all clean docker-ghcid docker-ghci docker docker-ghci-debug docker-test test tensor tensorkernel xperm
 
 LIBDIR = ../canonicalize
 LDOPTS = -lstdc++ -lcanonicalize -L$(LIBDIR)
@@ -22,10 +22,10 @@ HSMODULES = Eval.hs \
 	    CalcFromExpr.hs
 
 tensorkernel: Kernel.hs $(HSMODULES)
-	ghc --make $< $(LDOPTS) -static -o tensorkernel
+	ghc --make $< $(LDOPTS) -static -o tensorkernel -no-keep-hi-files -no-keep-o-files -tmpdir=/tmp -hidir=hi/
 
 tensor: Main.hs XPerm.hs $(HSMODULES)
-	ghc --make $< $(LDOPTS) -static -o tensor
+	ghc --make $< $(LDOPTS) -static -o tensor -no-keep-hi-files -no-keep-o-files -tmpdir=/tmp -hidir=hi/
 
 test: Test.hs $(HSMODULES)
 	runhaskell RunTest.hs --ghc-arg="$(LDOPTS)"
@@ -47,17 +47,17 @@ docker-ghci-debug:
 	docker run --rm -it -v $(PWD)/../:/bnfctensor -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history -w /bnfctensor bnfctensor:debug ghci -fexternal-interpreter -prof
 
 clean:
-	-rm -f tensor *.hi *.o Frontend/*.hi Frontend/*.o
+	-rm -f tensor *.hi *.dyn_hi *.o *.dyn_o Frontend/*.hi Frontend/*.o
 
 LEXER = LexTensor.hs
 PARSER = ParTensor.hs
 
 VPATH = Frontend
 
-Frontend/%.hs: %.y
+%.hs: %.y
 	happy -gca $<
 
-Frontend/%.hs: %.x
+%.hs: %.x
 	alex -g $<
 
 Frontend/ParTensor.y Frontend/LexTensor.x: Tensor.cf
