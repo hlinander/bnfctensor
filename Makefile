@@ -1,5 +1,11 @@
 .PHONY: build-docker all ghci clean ghci-debug
 
+UID = $(shell id -u)
+GID = $(shell id -g)
+DOCKERLIB = -e "LD_LIBRARY_PATH=/bnfctensor/canonicalize" 
+DOCKERDEBUG = --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
+DOCKER = --rm -it -u $(UID):$(GID) -v $(PWD):/bnfctensor -w /bnfctensor/src $(DOCKERLIB) bnfctensor:latest
+
 all:
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest make
 
@@ -20,10 +26,10 @@ ghci-debug:
 	(cd src && make docker-ghci-debug)
 
 run:
-	docker run --rm -it -e "LD_LIBRARY_PATH=/bnfctensor/canonicalize" -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest ./tensor
+	docker run $(DOCKER) ./tensor
 
 term:
-	docker run --cap-add=SYS_PTRACE --security-opt seccomp=unconfined --rm -it -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest /bin/bash
+	docker run $(DOCKERDEBUG) $(DOCKER) /bin/bash
 
 test:
 	(cd src && make docker-test)
