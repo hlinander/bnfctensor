@@ -6,7 +6,7 @@ DOCKERLIB = -e "LD_LIBRARY_PATH=/bnfctensor/canonicalize"
 DOCKERDEBUG = --cap-add=SYS_PTRACE --security-opt seccomp=unconfined
 DOCKER = --rm -it -u $(UID):$(GID) -v $(PWD):/bnfctensor -w /bnfctensor/src $(DOCKERLIB) bnfctensor:latest
 
-JUPYTER_KERNEL_PATH = $(HOME)/.local/share/jupyter/kernels/bnfctensor
+JUPYTER_KERNEL_PATH = $(HOME)/.local/share/jupyter/kernels/tensorkernel
 
 all:
 	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest make
