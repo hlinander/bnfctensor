@@ -229,10 +229,10 @@ simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
 simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
 simplifyFactors' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (Prod f1 f2) -- TODO: Duplicate rule
 simplifyFactors' (Prod (Number 1) f) = f
-simplifyFactors' (Prod (Number 0) f) = Tensor "⦸" (indexFromCalc f)
-simplifyFactors' (Prod (Number n) (Tensor "⦸" idx)) = Tensor "⦸" idx
-simplifyFactors' c@(Prod (Tensor "⦸" idx) f) = Tensor "⦸" (indexFromCalc c)
-simplifyFactors' c@(Prod f (Tensor "⦸" idx)) = Tensor "⦸" (indexFromCalc c)
+simplifyFactors' (Prod (Number 0) f) = Tensor "∅" (indexFromCalc f)
+simplifyFactors' (Prod (Number n) (Tensor "∅" idx)) = Tensor "∅" idx
+simplifyFactors' c@(Prod (Tensor "∅" idx) f) = Tensor "∅" (indexFromCalc c)
+simplifyFactors' c@(Prod f (Tensor "∅" idx)) = Tensor "∅" (indexFromCalc c)
 simplifyFactors' x = x
 
 simplifyPermutations :: Calc -> Calc
