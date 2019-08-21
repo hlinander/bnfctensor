@@ -19,7 +19,7 @@ RUN cabal update && cabal install \
 	generic-arbitrary \
 	readline \
 	split \
-	ipython-kernel \
+	ipython-kernel-0.9.1.0 \
 	lens \
 	uniplate \
 	tree-view
