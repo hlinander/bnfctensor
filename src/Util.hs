@@ -23,6 +23,10 @@ replaceAt :: Int -> a -> [a] -> [a]
 replaceAt idx x xs = lh ++ x:rh
     where (lh, _:rh) = splitAt idx xs
 
+transformAt :: Int -> (a -> a) -> [a] -> [a]
+transformAt idx f xs = lh ++ f r : rh
+    where (lh, r:rh) = splitAt idx xs
+
 image :: Permutation -> Int -> Int
 image perm i = unsafeMaybe $ elemIndex i $ permuteList perm [0..]
 

@@ -1,3 +1,4 @@
+{-# LANGUAGE TupleSections #-}
 module Core where
 
 -----------------------------------------------------------------------
@@ -13,6 +14,7 @@ import qualified Frontend.AbsTensor as Abs (
 import System.IO.Unsafe
 
 import Control.Monad.Except
+import Test.QuickCheck
 
 import Data.List
 import Data.Maybe
@@ -88,6 +90,43 @@ lookupGeneratingSet :: TensorType -> [Permutation]
 lookupGeneratingSet t = map (uncurry concatPermutations) (zip sg ig)
     where sg = map signSymmetry (tensorSymmetries t)
           ig = map indexSymmetry (tensorSymmetries t)
+
+-- T.a.b [1 0]+
+-- S.a.b.c [0 2 1]-
+
+-- T.a.b S.c.d.e
+-- [1 0 2 3 4]+ (gs for T in product)
+-- [0 1 2 4 3]- (gs for S in product)
+
+-- foo :: TensorType -> TensorType -> [Permutation]
+-- foo t1 t2 = zipWith concatPermutations gs1 (repeat $ identity n2) ++
+--             zipWith concatPermutations (repeat $ identity n1) gs2
+--     where gs1 = lookupGeneratingSet t1
+--           gs2 = lookupGeneratingSet t2
+--           n1 = length $ tensorIndices t1
+--           n2 = length $ tensorIndices t2
+
+
+type Loff = ([Permutation], [Permutation])
+
+-- inserts a tensor to a generating set
+amendGeneratingSet :: TensorType -> Loff -> Loff
+amendGeneratingSet t ([], []) = ( map signSymmetry (tensorSymmetries t)
+                                , map indexSymmetry (tensorSymmetries t))
+amendGeneratingSet t (sg, ig) = (sg ++ sg',
+    zipWith concatPermutations (repeat $ identity n) ig ++
+    zipWith concatPermutations ig' (repeat $ identity n'))
+    where n = length $ tensorIndices t
+          n' = permutationSize g
+          (g:_) = ig
+          sg' = map signSymmetry (tensorSymmetries t)
+          ig' = map indexSymmetry (tensorSymmetries t)
+
+-- (zipWith concatPermutations (repeat $ identity n) gs) ++
+                        --    sg', zipWith concatPermutations gs' (repeat $ identity n'))
+
+termGeneratingSet :: [TensorType] -> [Permutation]
+termGeneratingSet ts = (uncurry . zipWith) concatPermutations $ foldr amendGeneratingSet ([], []) ts
 
 lookupMetric' :: e -> ReprType -> BookState -> Either e TensorType
 lookupMetric' e r = (maybeToEither e) . lookupMetric r
@@ -194,8 +233,8 @@ setValence _ _ _ = undefined
 
 changeValence :: BookState -> Calc -> Int -> Either String Calc
 changeValence bs c i = do
-    --let indices = traceShow ((show i) ++ ":") $ traceShowId $ indexFromCalc c
-    let indices = indexFromCalc c
+    --let indices = traceShow ((show i) ++ ":") $ traceShowId $ freeIndexFromCalc c
+    let indices = freeIndexFromCalc c
     let index = indices!!i
     let r = indexRepr index
     let valence = indexValence index
@@ -211,7 +250,7 @@ changeValence bs c i = do
 
 switchValence :: BookState -> Calc -> Int -> Either String Calc
 switchValence bs c i = do
-    let indices = indexFromCalc c
+    let indices = freeIndexFromCalc c
     let index = indices!!i
     let r = indexRepr index
     let valence = indexValence index
@@ -229,39 +268,42 @@ otherValence :: ValenceType -> ValenceType
 otherValence Up = Down
 otherValence Down = Up
 
+
+
+
 -- Free indices in calc
-indexFromCalc :: Calc -> [Index]
-indexFromCalc x = case x of
+freeIndexFromCalc :: Calc -> [Index]
+freeIndexFromCalc x = case x of
   (Number _) -> []
   (Power _ _) -> []
   (Tensor _ []) -> []
   (Tensor _ idx) -> idx
-  (Sum first _) -> indexFromCalc first
-  (Prod f1 f2) -> indexFromCalc f1 ++ indexFromCalc f2
+  (Sum first _) -> freeIndexFromCalc first
+  (Prod f1 f2) -> freeIndexFromCalc f1 ++ freeIndexFromCalc f2
   -- Permuted indices must be of same type so can just pass through
-  (Permute p c) -> permuteList (inverse p) $ indexFromCalc c
+  (Permute p c) -> permuteList (inverse p) $ freeIndexFromCalc c
   (Contract i1 i2 c)
-      | i1 < i2 -> deleteAt i1 $ deleteAt i2 (indexFromCalc c)
-      | i1 > i2 -> deleteAt i2 $ deleteAt i1 (indexFromCalc c)
-  (Op n idx c) -> idx ++ indexFromCalc c
+      | i1 < i2 -> deleteAt i1 $ deleteAt i2 (freeIndexFromCalc c)
+      | i1 > i2 -> deleteAt i2 $ deleteAt i1 (freeIndexFromCalc c)
+  (Op n idx c) -> idx ++ freeIndexFromCalc c
 
 nFreeIndices :: Calc -> Int
-nFreeIndices = length . indexFromCalc
+nFreeIndices = length . freeIndexFromCalc
 
 tensorTypeFromCalc :: String -> Calc -> TensorType
-tensorTypeFromCalc l c = TensorType l (indexTypeFromCalc c) undefined
+tensorTypeFromCalc l c = TensorType l (map indexRepr $ freeIndexFromCalc c) undefined
 
-indexTypeFromCalc :: Calc -> [IndexType]
-indexTypeFromCalc (Number _) = []
-indexTypeFromCalc (Tensor _ []) = []
-indexTypeFromCalc (Tensor _ idx) = map indexToIndexType idx
-indexTypeFromCalc (Sum first _) = indexTypeFromCalc first
-indexTypeFromCalc (Prod f1 f2) = indexTypeFromCalc f1 ++ indexTypeFromCalc f2
--- Permuted indices must be of same type so can just pass through
-indexTypeFromCalc (Permute p c) = indexTypeFromCalc c
-indexTypeFromCalc (Contract i1 i2 c)
-    | i1 < i2 = deleteAt i1 $ deleteAt i2 (indexTypeFromCalc c)
-indexTypeFromCalc (Op n idx c) = (map indexToIndexType idx) ++ indexTypeFromCalc c
+-- indexTypeFromCalc :: Calc -> [IndexType]
+-- indexTypeFromCalc (Number _) = []
+-- indexTypeFromCalc (Tensor _ []) = []
+-- indexTypeFromCalc (Tensor _ idx) = map indexToIndexType idx
+-- indexTypeFromCalc (Sum first _) = indexTypeFromCalc first
+-- indexTypeFromCalc (Prod f1 f2) = indexTypeFromCalc f1 ++ indexTypeFromCalc f2
+-- -- Permuted indices must be of same type so can just pass through
+-- indexTypeFromCalc (Permute p c) = indexTypeFromCalc c
+-- indexTypeFromCalc (Contract i1 i2 c)
+--     | i1 < i2 = deleteAt i1 $ deleteAt i2 (indexTypeFromCalc c)
+-- indexTypeFromCalc (Op n idx c) = (map indexToIndexType idx) ++ indexTypeFromCalc c
 
 indexToIndexType :: Index -> IndexType
 indexToIndexType i = indexRepr i
@@ -272,3 +314,97 @@ type Error = Except String
 maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither e (Nothing) = Left e
 maybeToEither _ (Just x)  = Right x
+
+-- T.a.b^b * T.c.d.e = C 1 2 (T.a.x.y T.c.d.e)
+-- [1,2] dummies
+-- [0,3,4,5] frees
+-- [a,c,d,e]
+
+
+-- C 1 2 $ C 1 2 $ C 1 2 T [..10]
+-- [1,2] (5,6) ++ [1,2] (3,4) ++ [1,2]
+-- ([5,6,3,4,1,2], [1,2,3,4])
+--  [5,6,3,4,1,2], [7,8,9,10]
+
+-- [5,6,3,4,1,2]
+
+
+isMonoTerm :: Calc -> Bool
+isMonoTerm c = case c of
+  (Number _) -> True
+  (Power _ _) -> True
+  (Tensor _ _) -> True
+  (Sum _ _) -> False
+  (Prod f1 f2) -> isMonoTerm f1 && isMonoTerm f2
+  (Permute p c) -> isMonoTerm c
+  (Contract i1 i2 c) -> isMonoTerm c
+  (Op n idx c) -> isMonoTerm c
+
+-- prop_allIndexSlotsPreservesLength :: Calc -> Property
+-- prop_allIndexSlotsPreservesLength c =
+--     isMonoTerm c ==> length frees + length dummies == nIndices
+--     where (frees, dummies) = allIndexSlots c
+--           nIndices = length $ allIndices c
+
+allIndices :: Calc -> [Index]
+allIndices c | isMonoTerm c = case c of
+  (Number _) -> []
+  (Power _ _) -> []
+  (Tensor _ []) -> []
+  (Tensor _ idx) -> idx
+  (Prod f1 f2) -> allIndices f1 ++ allIndices f2
+  (Permute p c) -> permuteList (inverse p) $ allIndices c
+  (Contract i1 i2 c)
+      | i1 < i2 -> deleteAt i1 $ deleteAt i2 (allIndices c)
+      | i1 > i2 -> deleteAt i2 $ deleteAt i1 (allIndices c)
+  (Op n idx c) -> idx ++ allIndices c
+allIndices c = undefined
+
+
+offsetSequence :: Int -> [Int] -> [Int]
+offsetSequence n = map (n +)
+
+-- (True, _) => dummy index
+-- (False, _) => free index
+type IndexTagType = (Bool, Int)
+
+-- instance Monad IndexTagType where
+--     (>>=) a b = undefined
+--     return a = a
+
+allIndexTags :: Calc -> [IndexTagType]
+allIndexTags c = case c of
+  (Number _) -> []
+  (Power _ _) -> []
+  (Tensor _ []) -> []
+  (Tensor _ idx) -> map (True,) [0..length idx]
+  (Prod f1 f2) -> tags1 ++ map (\x -> (fst x, snd x + length tags1)) tags2
+    where tags1 = allIndexTags f1
+          tags2 = allIndexTags f2
+  (Permute p c) -> permuteList (inverse p) $ allIndexTags c
+  (Contract i1 i2 c) -> toDummy i1 $ toDummy i2 (allIndexTags c)
+    where toDummy i = transformAt i ((True,) . snd)
+  (Op n idx c) -> undefined
+  _ -> undefined
+
+allIndexSlots :: Calc -> ([Int], [Int])
+allIndexSlots c = (map snd frees, map snd dummies)
+    where (dummies, frees) = partition fst $ allIndexTags c 
+
+-- allIndexSlots :: Calc -> ([Int], [Int])
+-- allIndexSlots c = case c of
+--   (Number _) -> ([], [])
+--   (Power _ _) -> ([], [])
+--   (Tensor _ []) -> ([], [])
+--   (Tensor _ idx) -> ([0..length idx], [])
+--   (Prod f1 f2) -> (frees', dummies')
+--     where (free1, dummies1) = allIndexSlots f1
+--           (free2, dummies2) = allIndexSlots f2
+--           nIndices1 = length free1 + length dummies1
+--           frees' = free1 ++ offsetSequence nIndices1 free2
+--           dummies' = dummies1 ++ offsetSequence nIndices1 dummies2
+--   (Permute p c) -> permuteList (inverse p) $ allIndexSlots c
+--   (Contract i1 i2 c)
+--       | i1 < i2 -> deleteAt i1 $ deleteAt i2 (freeIndexFromCalc c)
+--       | i1 > i2 -> deleteAt i2 $ deleteAt i1 (freeIndexFromCalc c)
+--   (Op n idx c) -> idx ++ freeIndexFromCalc c

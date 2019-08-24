@@ -37,7 +37,7 @@ execute _ "collect" (c:[]) = fixPoint collectTerms c
 execute _ "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
-execute bs "canon" (c:[]) = canonPerm bs c
+execute bs "canon" (c:[]) = canonTerms bs c
 execute _ _ (c:rest) = c
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
@@ -53,29 +53,56 @@ fixPoint' n f c = case n of
 showCalc :: Calc -> Calc
 showCalc c = traceShowId c
 
+
+flattenProduct :: Calc -> [Calc]
+flattenProduct (Prod s1 s2) = flattenProduct s1 ++ flattenProduct s2
+flattenProduct x = [x]
+
+canonTerms :: BookState -> Calc -> Calc
+canonTerms bs c = runReader (canonTerms' c) bs
+
+
+canonTerms' :: Calc -> Reader BookState Calc 
+canonTerms' c = case c of
+  Sum  s1 s2 -> Sum <$> (canonTerms' s1) <*> (canonTerms' s2)
+  Permute p c' -> canonTerm p c'
+  _ -> return c
+
+canonTerm :: Permutation -> Calc -> Reader BookState Calc
+canonTerm p c = do
+  bs <- ask
+  let foo = allIndexSlots c
+      tensors = flattenProduct c
+      tt (Tensor name _) = fromJust $ lookupTensor name bs
+      gs = termGeneratingSet $ map tt tensors
+      permWithSign = [1,2] ++ map (2 +) (fromPermutation p)
+      outPerm = canonicalizeFree permWithSign (map fromPermutation gs) 
+  return $ permToCalc c outPerm
+
 canonPerm :: BookState -> Calc -> Calc
 canonPerm bs c@(Prod p1 p2) = Prod (canonPerm bs p1) (canonPerm bs p2)
 canonPerm bs c@(Contract _ _ _) = c
 canonPerm bs (Sum s1 s2) = Sum (canonPerm bs s1) (canonPerm bs s2)
 canonPerm bs c@(Number _) = c
-canonPerm bs c = permToCalc cfree (outPerm)
+canonPerm bs c = permToCalc cfree outPerm
   where (perm, cfree, gs) = permData bs c
-        -- permWithSign = perm ++ [length perm + 1, length perm + 2]
-        permWithSign = [1,2] ++ (map ((+) 2) perm)
+        permWithSign = [1,2] ++ map (2 +) perm
         outPerm = canonicalizeFree permWithSign (map fromPermutation gs)
 
-
+--            InnerCalc Pi'    CanonCalc
 permToCalc :: Calc -> [Int] -> Calc
 permToCalc c perm = Prod sign (Permute (toPermutation lperm) c)
   where lperm = map (flip (-) 2) $ drop 2 perm
         [s1, s2] = take 2 perm
         sign = if s2 > s1 then Number 1 else Number (-1)
 
+--                                Pi     InnerCalc   GS
 permData :: BookState -> Calc -> ([Int], Calc, [Permutation])
-permData bs (Permute p c@(Tensor name _)) = (fromPermutation p, c, vinst)
-  where vinst = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
-permData bs c@(Tensor name _) = ([1..(nFreeIndices c)], c, vinst)
-  where vinst = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
+permData bs (Permute p c@(Tensor name _)) = (fromPermutation p, c, gs)
+  where gs = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
+permData bs c@(Tensor name _) = ([1..(nFreeIndices c)], c, gs)
+  where gs = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
+permData _ _ = undefined
 
 -----------------------------------------------------------------------
 -- Basic algebraic convenience
@@ -115,8 +142,8 @@ sortCalc = transform f
         f p@(Prod p1 p2)
           | p1 > p2 && (l1 > 0 && l2 > 0) = Permute perm $ Prod p2 p1
           | p1 > p2 = Prod p2 p1
-              where l1 = length $ indexFromCalc p1
-                    l2 = length $ indexFromCalc p2
+              where l1 = length $ freeIndexFromCalc p1
+                    l2 = length $ freeIndexFromCalc p2
                     perm = multiplyMany $ map (const (cycleLeft (l1 + l2))) [1..l1]
         -- Could it be render that is wrong and not sort?
         f x = x
@@ -189,18 +216,18 @@ simplifyFactors' (Prod (Number m) (Prod (Number n) f)) = Prod (Number (n*m)) f
 simplifyFactors' (Prod (Prod (Number n) f1) f2) = Prod (Number n) (Prod f1 f2)
 simplifyFactors' (Prod f1 (Prod (Number n) f2)) = Prod (Number n) (Prod f1 f2) -- TODO: Duplicate rule
 simplifyFactors' (Prod (Number 1) f) = f
-simplifyFactors' (Prod (Number 0) f) = Tensor "∅" (indexFromCalc f)
+simplifyFactors' (Prod (Number 0) f) = Tensor "∅" (freeIndexFromCalc f)
 simplifyFactors' (Prod (Number n) (Tensor "∅" idx)) = Tensor "∅" idx
-simplifyFactors' c@(Prod (Tensor "∅" idx) f) = Tensor "∅" (indexFromCalc c)
-simplifyFactors' c@(Prod f (Tensor "∅" idx)) = Tensor "∅" (indexFromCalc c)
+simplifyFactors' c@(Prod (Tensor "∅" idx) f) = Tensor "∅" (freeIndexFromCalc c)
+simplifyFactors' c@(Prod f (Tensor "∅" idx)) = Tensor "∅" (freeIndexFromCalc c)
 simplifyFactors' x = x
 
 simplifyPermutations :: Calc -> Calc
 simplifyPermutations = transform simplifyPermutations'
 
 simplifyPermutations' :: Calc -> Calc
-simplifyPermutations' (Prod (Permute p f1) f2) = Permute (concatPermutations p $ identity (length $ indexFromCalc f2)) (Prod f1 f2)
-simplifyPermutations' (Prod f1 (Permute p f2)) = Permute (concatPermutations (identity (length $ indexFromCalc f1)) p) (Prod f1 f2)
+simplifyPermutations' (Prod (Permute p f1) f2) = Permute (concatPermutations p $ identity (length $ freeIndexFromCalc f2)) (Prod f1 f2)
+simplifyPermutations' (Prod f1 (Permute p f2)) = Permute (concatPermutations (identity (length $ freeIndexFromCalc f1)) p) (Prod f1 f2)
 simplifyPermutations' (Permute p (Prod (Number n) f)) = Prod (Number n) (Permute p f)
 simplifyPermutations' (Permute p (Sum t1 t2)) = Sum (Permute p t1) (Permute p t2)
 simplifyPermutations' (Permute p (Permute q c)) = Permute (multiply p q) c
@@ -315,18 +342,18 @@ commuteContractPermute' x = x
 --       `- g^a̲.b̲ Pos: [0,0,1]
 validCalc :: Calc -> Bool
 validCalc x = case x of
-  Permute p c -> (permutationSize p == length (indexFromCalc c)) && validCalc c
+  Permute p c -> (permutationSize p == length (freeIndexFromCalc c)) && validCalc c
   Contract i1 i2 c -> inRange i1 0 (n - 1)
                    && inRange i2 0 (n - 1)
                    && (indexRepr (indices !! i1) == indexRepr (indices !! i2))
                    && validCalc c
     where inRange i min max = (i >= min) && (i <= max)
-          indices = indexFromCalc c
+          indices = freeIndexFromCalc c
           n = length indices
   Prod f1 f2 -> validCalc f1 && validCalc f2
   Sum t1 t2 -> validCalc t1 && validCalc t2 && sort freeLH == sort freeRH
-    where freeLH = indexFromCalc t1
-          freeRH = indexFromCalc t2
+    where freeLH = freeIndexFromCalc t1
+          freeRH = freeIndexFromCalc t2
   Op _ _ c -> validCalc c
   _ -> True
 
@@ -337,7 +364,7 @@ replaceIndex c i idx = case c of
     Prod f1 f2
         | i < n -> Prod (replaceIndex f1 i idx) f2
         | i >= n -> Prod f1 (replaceIndex f2 (i - n) idx)
-            where n = length $ indexFromCalc f1
+            where n = length $ freeIndexFromCalc f1
     Contract i1 i2 c -> Contract i1 i2 (replaceIndex c i' idx)
         where i' = indexUnderContract i1 i2 i
     Permute perm c -> Permute perm (replaceIndex c (image perm i) idx)

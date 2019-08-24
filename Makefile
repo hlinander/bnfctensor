@@ -9,7 +9,7 @@ DOCKER = --rm -it -u $(UID):$(GID) -v $(PWD):/bnfctensor -w /bnfctensor/src $(DO
 JUPYTER_KERNEL_PATH = $(HOME)/.local/share/jupyter/kernels/tensorkernel
 
 all:
-	docker run --rm -v $(PWD):/bnfctensor -w /bnfctensor/src bnfctensor:latest make
+	docker run $(DOCKER) make
 
 clean:
 	(cd src && make docker-clean)
@@ -32,6 +32,9 @@ run:
 
 term:
 	docker run $(DOCKERDEBUG) $(DOCKER) /bin/bash
+
+root-term:
+	docker run --rm -it bnfctensor:latest /bin/bash
 
 test:
 	(cd src && make docker-test)

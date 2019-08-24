@@ -47,7 +47,7 @@ calcFromExpr' x = case x of
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject absIdx indexTypes freeSlots
     calc <- case maybeCalc of
       Just storedCalc -> liftEither newCalc
-          where storedIndices = indexFromCalc storedCalc
+          where storedIndices = freeIndexFromCalc storedCalc
                 valences = map indexValence storedIndices
                 requestedValences = map absIndexValence absIdx
                 needsFix = filter (\(v, rv, _) -> v /= rv) (zip3 valences requestedValences [0..])
@@ -75,7 +75,7 @@ calcFromExpr' x = case x of
     (calc, idx) <- calcFromExpr' expr
     opType <- asks (lookupOp' ("Undefined operator '" ++ l ++ "'") l) >>= liftEither
     let calcAbsIndices = map labeledIndexToAbsIndex idx
-    let indexTypes = opIndices opType ++ indexTypeFromCalc calc
+    let indexTypes = opIndices opType ++ map indexRepr (freeIndexFromCalc calc)
     let allIndices = absIdx ++ calcAbsIndices
     let freeSlots = T.freeIndicesWithPos allIndices []
     let (indices, perm, contractions, sortedIdxAndLabels) = processIndexedObject allIndices indexTypes freeSlots

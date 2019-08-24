@@ -35,7 +35,7 @@ instance Arbitrary Calc where
 
 shrinkCalc :: Calc -> [Calc]
 shrinkCalc c = case c of
-    Prod f1 f2 -> [ Tensor "shrinked" (indexFromCalc f1 ++ indexFromCalc f2) ]
+    Prod f1 f2 -> [ Tensor "shrinked" (freeIndexFromCalc f1 ++ freeIndexFromCalc f2) ]
         ++ [ Prod s1 s2 | (s1,s2) <- shrink (f1,f2) ]
     Sum t1 t2 -> [t1,t2]
     Op n idx calc -> [Op n idx s | s <- shrink calc]
@@ -71,7 +71,7 @@ isContractible :: Calc -> Bool
 isContractible c = case map length indexGroups of
         [] -> False
         xs -> minimum xs >= 2
-    where indices = indexFromCalc c
+    where indices = freeIndexFromCalc c
           indexGroups = map snd $ M.toList $ M.fromListWith (++) [(indexRepr i, [i]) | i <- indices]
 
 
@@ -81,15 +81,15 @@ prop_contract i1 i2 i = i1 >= 0    && i2 >= 0
     ==> 1 == 1
 
 prop_replaceIndex :: Calc -> Int -> Index -> Property
-prop_replaceIndex c i idx = length (indexFromCalc c) > i && i >= 0
-        ==> counterexample (renderConsole c ++ " -> " ++ renderConsole replaced) $ (indexFromCalc replaced) !! i == idx
+prop_replaceIndex c i idx = length (freeIndexFromCalc c) > i && i >= 0
+        ==> counterexample (renderConsole c ++ " -> " ++ renderConsole replaced) $ (freeIndexFromCalc replaced) !! i == idx
         where replaced = replaceIndex c i idx
 
-arbitraryContraction = suchThat arbitrary (\c -> length (indexFromCalc c) >= 2) >>= arbitraryContract
+arbitraryContraction = suchThat arbitrary (\c -> length (freeIndexFromCalc c) >= 2) >>= arbitraryContract
 
 arbitraryContract :: Calc -> Gen Calc
 arbitraryContract c = do
-    let indices = indexFromCalc c
+    let indices = freeIndexFromCalc c
     let n = length indices
     i1 <- choose (0, n-1)
     i2 <- suchThat (choose (0, n-1)) (/= i1)
@@ -102,7 +102,7 @@ flipIndex i@(Index r v) = i { indexValence = f v }
 
 arbitraryPermute :: Calc -> Gen Calc
 arbitraryPermute c = do
-    let n = length $ indexFromCalc c
+    let n = length $ freeIndexFromCalc c
     perm <- shuffle [1..n]
     return $ Permute (toPermutation perm) c
 
@@ -156,14 +156,14 @@ arbitraryMetric = do
     return $ Tensor "g" [index1, index2]
 
 
-prop_indexFromCalcUnderContraction :: Calc -> Property
-prop_indexFromCalcUnderContraction c = length (indexFromCalc c) > 2 ==>
+prop_freeIndexFromCalcUnderContraction :: Calc -> Property
+prop_freeIndexFromCalcUnderContraction c = length (freeIndexFromCalc c) > 2 ==>
     forAll (arbitraryContract c) invariant
-        where invariant c' = length (indexFromCalc c') == (length (indexFromCalc c)) - 2
+        where invariant c' = length (freeIndexFromCalc c') == (length (freeIndexFromCalc c)) - 2
 
 -- NEEDS HELP
 -- prop_commuteContractPermute :: Calc -> Property
--- prop_commuteContractPermute calc = length (indexFromCalc calc) > 2
+-- prop_commuteContractPermute calc = length (freeIndexFromCalc calc) > 2
 --     ==> do
 --     permuted <- arbitraryPermute calc
 --     contracted <- arbitraryContract permuted
@@ -175,7 +175,7 @@ prop_renderCalc :: Calc -> Bool
 prop_renderCalc calc = not (null (renderConsole calc))
 
 prop_eliminateMetricsIsValid :: Calc -> Property
-prop_eliminateMetricsIsValid c = (length (indexFromCalc c) > 2)
+prop_eliminateMetricsIsValid c = (length (freeIndexFromCalc c) > 2)
     ==> forAll (arbitraryContract c) $ \calc -> do
         let condition = validCalc calc ==> validCalc (eliminateMetrics calc)
         counterexample (renderConsole calc) condition

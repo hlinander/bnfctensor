@@ -6,6 +6,8 @@ tensorkernel
 *.x
 *.y
 *.sw?
+*.so
+*.a
 .vscode
 env/
 .ipynb_checkpoints/
@@ -13,3 +15,8 @@ src/Frontend/
 target/
 .cabal-sandbox/
 dist/
+build/
+notebooks/Untitled*.ipynb
+.hpc/
+*.tix
+*~
