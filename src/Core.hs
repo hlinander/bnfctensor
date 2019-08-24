@@ -23,10 +23,6 @@ import Util
 
 import qualified Data.Map as M
 
--- import Control.Lens.Plated
--- import Data.Data.Lens
--- import Data.Data
-
 import Debug.Trace
 
 type IndexType = ReprType
@@ -35,14 +31,6 @@ data GroupType = GroupType {
     groupName :: String,
     groupDims :: [Int]
 } deriving (Show, Eq, Ord)
-
--- instance Show GroupType where
---     showsPrec i g = showString (groupName g) . showList (groupDims g)
-
--- createRepr :: GroupType -> Int -> ReprType
--- createRepr = flip ReprType
-
--- [1,0,2,3] [0,2,1,3] [0,1,3,2] []
 
 data TensorType = TensorType {
     tensorName :: String,
@@ -60,35 +48,16 @@ data SymmetryType = SymmetryType {
     signSymmetry :: Permutation
 } deriving (Show, Eq, Ord)
 
---instance Show TensorType where
---    showsPrec i t = showString (tensorName t)
---        . showString " { "
---        . showList (tensorIndices t)
---        . showString " }"
-
 data OpType = OpType {
     opName :: String,
     opIndices :: [IndexType]
 } deriving Show
-
--- instance Show OpType where
---     showsPrec i t = showString (opName t)
---         . showString " { "
---         . showList (opIndices t)
---         . showString " }"
 
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
     --reprMetric :: Maybe TensorType
 } deriving (Show, Eq, Ord)
-
--- instance Show ReprType where
---     showsPrec i repr =
---         (showParen True
---         $ shows (reprDim repr))
---         . showString ": "
---         . shows (reprGroup repr)
 
 data FunctionType = FunctionType {
     funcName :: String,
@@ -97,13 +66,10 @@ data FunctionType = FunctionType {
 
 data BookState = BookState {
     bookTensors :: M.Map TensorName TensorType,
-    -- bookTensors :: M.Map String TensorType,
-    -- bookTensors :: [TensorType],
     bookOps :: [OpType],
     bookFuncs :: [FunctionType],
     bookCalcs :: M.Map String Calc,
     bookMetrics :: M.Map ReprType TensorType
-    -- bookVariables :: [(String,Int)] let foo = a+b+c+d
 } deriving Show
 
 nextAnonymousId :: BookState -> Int
@@ -133,7 +99,6 @@ lookupTensor' :: e -> String -> BookState -> Either e TensorType
 lookupTensor' e s = (maybeToEither e) . lookupTensor s
 
 lookupTensor :: String -> BookState -> Maybe TensorType
--- lookupTensor l bs = listToMaybe $ filter (\t -> tensorName t == l) $ bookTensors bs
 lookupTensor l bs = M.lookup l (bookTensors bs)
 
 lookupOp :: String -> BookState -> Maybe OpType
@@ -307,60 +272,3 @@ type Error = Except String
 maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither e (Nothing) = Left e
 maybeToEither _ (Just x)  = Right x
-
-
-data Transformation
-    = Rewrite { rewriteMatch :: (->) Calc Bool, rewriteWith :: Calc }
-
-compose :: Transformation
-compose = undefined
-
--- data TensorMonad = undefined
-
--- a * a * a -> a^3
-collectFactors :: Abs.Expr -> Abs.Expr
-collectFactors = undefined
-
--- a + b, {b |-> b + c} -> a + b + c
-substitute :: Abs.Expr -> Abs.Expr -> Abs.Expr -> Abs.Expr
-substitute x m s = undefined
-
--- a*b -> a*b + b*a
-symmetrize :: Abs.Expr -> [IndexType] -> Abs.Expr
-symmetrize = undefined
-
-antiSymmetrize :: Abs.Expr -> [IndexType] -> Abs.Expr
-antiSymmetrize = undefined
-
-expand :: Abs.Expr -> Abs.Expr
-expand = undefined
-
-sortTerms :: Abs.Expr -> Abs.Expr
-sortTerms = undefined
-
------------------------------------------------------------------------
--- Calculus
------------------------------------------------------------------------
-
-integrateByParts = undefined
-differentiate = undefined
-
------------------------------------------------------------------------
--- Magic sauce
------------------------------------------------------------------------
-
-decompose :: Abs.Expr -> Abs.Expr
-decompose = undefined
-
-canonicalize :: Abs.Expr -> Abs.Expr
-canonicalize = undefined
-
------------------------------------------------------------------------
--- Curvature
------------------------------------------------------------------------
-
-riemann = undefined
-ricci = undefined
-weyl = undefined
-
-

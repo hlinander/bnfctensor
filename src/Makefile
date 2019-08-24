@@ -29,10 +29,10 @@ HSMODULES = Eval.hs \
 	    CalcFromExpr.hs
 
 tensorkernel: Kernel.hs $(HSMODULES) $(CANONICALIZE)
-	ghc --make $< $(LDOPTS) -static -o tensorkernel -no-keep-hi-files -no-keep-o-files -tmpdir=/tmp -hidir=hi/
+	ghc --make $< $(LDOPTS) -fhpc -static -o tensorkernel -no-keep-hi-files -no-keep-o-files -tmpdir=/tmp -hidir=hi/
 
 tensor: Main.hs XPerm.hs $(HSMODULES) $(CANONICALIZE)
-	ghc --make $< $(LDOPTS) -static -o tensor -no-keep-hi-files -no-keep-o-files -tmpdir=/tmp -hidir=hi/
+	ghc --make $< $(LDOPTS) -fhpc -static -o tensor -no-keep-hi-files -no-keep-o-files -tmpdir=/tmp -hidir=hi/
 
 test: Test.hs $(HSMODULES) $(CANONICALIZE)
 	LD_PRELOAD="$(LIBDIR)/libcanonicalize.so" runhaskell RunTest.hs

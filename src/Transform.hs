@@ -59,15 +59,14 @@ canonPerm bs c@(Contract _ _ _) = c
 canonPerm bs (Sum s1 s2) = Sum (canonPerm bs s1) (canonPerm bs s2)
 canonPerm bs c@(Number _) = c
 canonPerm bs c = permToCalc cfree (outPerm)
-  where frees = [1..(nFreeIndices c)]
-        (perm, cfree, gs) = permData bs c
+  where (perm, cfree, gs) = permData bs c
         -- permWithSign = perm ++ [length perm + 1, length perm + 2]
         permWithSign = [1,2] ++ (map ((+) 2) perm)
         outPerm = canonicalizeFree permWithSign (map fromPermutation gs)
 
 
 permToCalc :: Calc -> [Int] -> Calc
-permToCalc c perm = Prod sign (Permute (toPermutation $ lperm) c)
+permToCalc c perm = Prod sign (Permute (toPermutation lperm) c)
   where lperm = map (flip (-) 2) $ drop 2 perm
         [s1, s2] = take 2 perm
         sign = if s2 > s1 then Number 1 else Number (-1)
@@ -113,35 +112,12 @@ sortCalc = transform f
   where f s@(Sum s1 s2)
           | s1 <= s2 = s
           | otherwise = Sum s2 s1
-        --f p@(Prod (Prod p1 p2) (Prod p3 p4))
-        --  | (p2 > p3 && (l2 > 0 && l3 > 0)) = Permute perm' $ Prod (Prod p1 p3) (Prod p2 p4)
-        --  | (p2 > p3) = Prod (Prod p1 p3) (Prod p2 p4)
-        --      where l1 = nFreeIndices p1
-        --            l2 = nFreeIndices p2
-        --            l3 = nFreeIndices p3
-        --            l4 = nFreeIndices p4
-        --            perm = concatPermutations (identity l1) $ multiplyMany $ map (\_ -> (cycleLeft (l2 + l3))) [1..l2]
-        --            perm' = concatPermutations perm (identity l4)
-        -- f p@(Prod (Prod p1 p2) p3)
-        --   | (p2 > p3 && (l2 > 0 && l3 > 0)) = Permute perm $ Prod (Prod p1 p3) p2
-        --   | (p2 > p3) = Prod (Prod p1 p3) p2
-        --       where l1 = nFreeIndices p1
-        --             l2 = nFreeIndices p2
-        --             l3 = nFreeIndices p3
-        --             perm = concatPermutations (identity l1) $ multiplyMany $ map (\_ -> (cycleLeft (l2 + l3))) [1..l2]
-        -- f p@(Prod p1 (Prod p2 p3))
-        --   | (p1 > p2 && (l1 > 0 && l2 > 0)) = Permute perm $ Prod p2 (Prod p1 p3)
-        --   | (p1 > p2) = Prod p2 (Prod p1 p3)
-        --       where l1 = nFreeIndices p1
-        --             l2 = nFreeIndices p2
-        --             l3 = nFreeIndices p3
-        --             perm = concatPermutations (multiplyMany $ map (\_ -> (cycleLeft (l1 + l2))) [1..l1]) (identity l3)
         f p@(Prod p1 p2)
-          | (p1 > p2 && (l1 > 0 && l2 > 0)) = Permute perm $ Prod p2 p1
+          | p1 > p2 && (l1 > 0 && l2 > 0) = Permute perm $ Prod p2 p1
           | p1 > p2 = Prod p2 p1
               where l1 = length $ indexFromCalc p1
                     l2 = length $ indexFromCalc p2
-                    perm = multiplyMany $ map (\_ -> (cycleLeft (l1 + l2))) [1..l1]
+                    perm = multiplyMany $ map (const (cycleLeft (l1 + l2))) [1..l1]
         -- Could it be render that is wrong and not sort?
         f x = x
 
@@ -156,27 +132,16 @@ treeSum l = foldl1 Sum l
 sortSum :: Calc -> Calc
 sortSum = transform (treeSum . sort . flattenSum)
 
-flattenProd :: Calc -> [Calc]
-flattenProd (Prod s1 s2) = flattenProd s1 ++ flattenProd s2
-flattenProd x = [x]
-
-treeProd :: [Calc] -> Calc
-treeProd (c:[]) = c
-treeProd l = foldl1 Prod l
-
-rewriteProd = fixPoint (transform f)
-  where f = treeProd . flattenProd
-
 collectSumList c = case c of
   t1:t2:rest
     | t1 == t2 -> collectSumList (Prod (Number 2) t1 : rest)
-  (Prod (Number p) f2):t2:rest
+  Prod (Number p) f2 : (t2 : rest)
     | f2 == t2 -> collectSumList (Prod (Number (p + 1)) t2 : rest)
-  t1:(Prod (Number p) f2):rest
+  t1 : Prod (Number p) f2 : rest
     | t1 == f2 -> collectSumList (Prod (Number (p + 1)) t1 : rest)
-  (Prod (Number q) f1):(Prod (Number p) f2):rest
+  Prod (Number q) f1 : (Prod (Number p) f2 : rest)
     | f1 == f2 -> collectSumList (Prod (Number (p + q)) f1 : rest)
-  t1:t2:rest -> t1:(collectSumList (t2:rest))
+  t1:t2:rest -> t1 : collectSumList (t2:rest)
   _ -> c
 
 isSimilar (Prod (Number _) c1) c2 | c1 == c2 = True
@@ -190,9 +155,6 @@ isSimilar' (Prod (Number _) c1) c2 | c1 == c2 = EQ
 isSimilar' c1 (Prod (Number _) c2) | c1 == c2 = EQ
 isSimilar' c1 c2 | c1 == c2 = EQ
 isSimilar' _ _ = GT
-
--- collectTerms2 = transform f
---   where f c@(Sum s1 s2) = concat $ groupBy isSimilar (flattenSum c)
 
 collectTerms :: Calc -> Calc
 collectTerms = transform collectTerms'
@@ -220,8 +182,6 @@ simplifyTerms = transform sT
 
 
 
-commuteContractPermute :: Calc -> Calc
-commuteContractPermute = transform commuteContractPermute'
 
 simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
@@ -326,13 +286,14 @@ indexOnMetric' c i = case c of
   _ -> return $ Nothing
 
 
+commuteContractPermute :: Calc -> Calc
+commuteContractPermute = transform commuteContractPermute'
 -- Contract 1 3 (Permute [0 1 2 3])
 -- Contract i1 i2 @ Permute p list = Permute p' @ Contract i1' i2' list
 -- p(i1') = i1 => i1' = p^-1(i1)
 commuteContractPermute' :: Calc -> Calc
 commuteContractPermute' (Contract i1 i2 (Permute perm c)) = if permutationSize newPerm > 0
-  then Permute newPerm (Contract i1'' i2'' c)
-  else (Contract i1'' i2'' c)
+  then Permute newPerm (Contract i1'' i2'' c) else Contract i1'' i2'' c
     where list = [0..permutationSize perm]
           permuted = permuteList (inverse perm) list
           permuted' = if i1 < i2
@@ -363,7 +324,7 @@ validCalc x = case x of
           indices = indexFromCalc c
           n = length indices
   Prod f1 f2 -> validCalc f1 && validCalc f2
-  Sum t1 t2 -> validCalc t1 && validCalc t2 && (sort freeLH) == (sort freeRH)
+  Sum t1 t2 -> validCalc t1 && validCalc t2 && sort freeLH == sort freeRH
     where freeLH = indexFromCalc t1
           freeRH = indexFromCalc t2
   Op _ _ c -> validCalc c
@@ -381,15 +342,21 @@ replaceIndex c i idx = case c of
         where i' = indexUnderContract i1 i2 i
     Permute perm c -> Permute perm (replaceIndex c (image perm i) idx)
     Op n idxs c'
-        | i < length idxs -> Op n (replaceAt i idx idxs) $ c'
-        | i >= length idxs -> Op n idxs $ replaceIndex c' (i - (length idxs)) idx
+        | i < length idxs -> Op n (replaceAt i idx idxs) c'
+        | i >= length idxs -> Op n idxs $ replaceIndex c' (i - length idxs) idx
     _ -> c
 
--- WHAT DOES THIS FUNCTION DO?
-indexUnderContract :: Int -> Int -> Int -> Int
+-- | Free index under a contraction
+-- Example: Contract 1 3 [a b c d] (with free indices [a c])
+--                        0 1 2 3                      0 1                     
+-- c has index position 1 over the contraction and position 2 under.
+indexUnderContract :: Int -- ^ First index of contraction
+                   -> Int -- ^ Second index of contraction 
+                   -> Int -- ^ Free index over the contraction
+                   -> Int -- ^ Corresponding free index under the contraction
 indexUnderContract i1 i2 i
-    | i2 > i1 = (deleteAt i1 $ deleteAt i2 [0..]) !! i
-    | i2 < i1 = (deleteAt i2 $ deleteAt i1 [0..]) !! i
+    | i2 > i1 = deleteAt i1 (deleteAt i2 [0..]) !! i
+    | i2 < i1 = deleteAt i2 (deleteAt i1 [0..]) !! i
 
 leibnitz :: Calc -> Calc
 leibnitz = fixPoint leibnitz'
@@ -416,23 +383,6 @@ subCalc' (Permute _ c) (0:rest) = subCalc' c rest
 subCalc' (Contract _ _ c) (0:rest) = subCalc' c rest
 subCalc' _ _ = Nothing
 
-generatingSet :: Calc -> [[Int]]
-generatingSet (Tensor "T" _) = [[2, 1, 4, 3]]
-generatingSet (Prod c1 c2) = gs1 ++ gs2
-  where gl1 = generatingSet c1
-        gl2 = generatingSet c2
-        n1 = nFreeIndices c1
-        n2 = nFreeIndices c2
-        gs1 = case gl1 of
-                [[]] -> []
-                l -> map (fromPermutation . padGenSetRight n2 . prepGenSet) l
-        gs2 = case gl2 of
-                [[]] -> []
-                l -> map (fromPermutation . padGenSetLeft n1 . prepGenSet) l
-generatingSet (Contract _ _ c) = generatingSet c
-generatingSet (Permute _ c) = generatingSet c
-generatingSet _ = [[]]
-
 padGenSetLeft n (p, s) = concatPermutations (concatPermutations (identity n) p) s
 padGenSetRight n (p, s) = concatPermutations (concatPermutations p (identity n)) s
 
@@ -440,87 +390,3 @@ prepGenSet gs = (p, s)
   where (l, sl) = splitAt (length gs - 2) gs
         p = toPermutation l
         s = sortingPermutationAsc sl
-
--- [0 1 2 3 4 5]
---      ^   ^
-type Positions = [Int]
-type AbsoluteContractions = [Int]
-type ContractState = (Positions, AbsoluteContractions)
-emptyContractState n = ([0..n], []) :: ContractState
-
-collectContractions :: Calc -> ([Int], Calc)
-collectContractions c = collectContractions' c []
-
--- [c b d a d e]
---  3 2   1   4
--- The above perm is exactly the right permutation of the frees in canonical form
--- I.e. (3 2 1 4)[a b c e d d], then we just need the permutation that places the dummies
--- in the correct location.
--- [c b a e d d]
---          2 4
-collectContractions' :: Calc -> [[Int]] -> ([Int], Calc)
-collectContractions' (Permute p c) cs = collectContractions' c cs
-collectContractions' (Contract i1 i2 c) cs = collectContractions' c ([i1, i2]:cs)
-collectContractions' c cs = (contractions, c)
-          where popOne (ps, conts) [c1, c2] | c2 > c1 = (ps'', n1:n2:conts)
-                                                        where (ps', n2) = popAt c2 ps
-                                                              (ps'', n1) = popAt c1 ps'
-                (_, contractions) = foldl (popOne) (emptyContractState $ nFreeIndices c) (cs)
-
-colCont :: Calc -> [Int] -> ([Int], [Int], Calc)
-colCont c p = colCont' c p []
-
-colCont' :: Calc -> [Int] -> [Int] -> ([Int], [Int], Calc)
-colCont' (Contract i1 i2 c) lperm dummies = colCont' c p' (dummies ++ [n1, n2])
-          where n2 = nFreeIndices c
-                n1 = n2 - 1
-                p' = insertAt i2 n2 $ insertAt i1 n1 lperm
-colCont' c lperm dummies = (lperm, dummies, c)
-
--- When we have a stack of Permute Contract Contract ... Contract Prod Prod ... Prod
--- the contract indices already refers to the "names" (see xperm_new.cc L2315) of the dummies
-debug calc = unsafePerformIO $ putStrLn (renderConsole calc) >> return calc
-
--- canonXPerm :: Calc -> Calc
--- canonXPerm (Sum s1 s2) = Sum (canonXPerm s1) (canonXPerm s2)
--- canonXPerm c = xPermToCalc cfree (traceShowId cxperm) (dummies)-- traceShow (show (lperm, frees, dummies, gs, cperm, cxperm)) (debug c)
---   where frees = [1..(nFreeIndices c)]
---         (lperm, dummies, cfree) = xPermData c
---         lperm' = lperm ++ [length lperm + 1, length lperm + 2]
---         gs = generatingSet cfree
---         cxperm = xPerm lperm' gs [1..(nFreeIndices cfree)] frees dummies
-
--- [1 2 5 3 4 6] [5 6]
-reduceContractions c perm [] = Permute (toPermutation perm) c
-reduceContractions c perm (d1:d2:rest) = reduceContractions (Contract i1 i2 c) perm' rest
-  where i1 = unsafeElemIndex d1 perm
-        i2 = unsafeElemIndex d2 perm
-        [si1, si2] = sort [i1, i2]
-        perm' = deleteAt si1 $ deleteAt si2 perm
-
-xPermToCalc :: Calc -> [Int] -> [Int] -> Calc
-xPermToCalc c xperm dummies = Prod sign $ reduceContractions c lperm dummies
-  where lperm = take (length xperm - 2) xperm
-        [s1, s2] = drop (length xperm - 2) xperm
-        sign = if s2 > s1 then Number 1 else Number (-1)
-
-type PermutationList = [Int]
-type DummyNames = [Int]
-
-xPermData :: Calc -> (PermutationList, DummyNames, Calc)
-xPermData (Permute p c) = colCont c (fromPermutation p)
-xPermData c = colCont c [1..(nFreeIndices c)]
-
-lowerIndices bs = transform (lowerIndices' bs)
-
-lowerIndices' :: BookState -> Calc -> Calc
-lowerIndices' bs t@(Tensor l idx) = calc
-  where needFix = filter ((==Up) . indexValence . fst) (zip idx [0..])
-        calc = unsafeEither $ foldM (switchValence bs) t (map snd needFix)
-lowerIndices' bs x = x
-
-
---canonicalise c = show lperm ++ show dummies ++ " " ++ (renderConsole c')
---  where (lperm, dummies, c') = colCont c [1..(nFreeIndices c)]
-
--- canonicaliseFrees term = 

@@ -114,7 +114,7 @@ simpleConfig mbs = KernelConfig
     }
 
 main :: IO ()
-main = getArgs >>= \args -> case args of
+main = getArgs >>= \arg -> case arg of
     ["run", profileFile] -> do
         var <- newMVar emptyBook
         easyKernel profileFile (simpleConfig var)
