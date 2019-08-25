@@ -42,4 +42,5 @@ RUN stack ./install.hs hie-8.6.3
 RUN stack ./install.hs build-data
 RUN chmod a+rwx /root/.local/bin
 RUN ln -s /root/.local/bin/hie /usr/bin/hie
+RUN cabal install doctest
 #RUN stack ./install.hs build-data

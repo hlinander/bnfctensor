@@ -29,6 +29,7 @@ execute _ "leibnitz" (c:[]) = leibnitz c
 execute _ "simp" (c:[]) = simplify c
 execute _ "show" (c:[]) = showCalc c
 execute _ "ccp" (c:[]) = commuteContractPermute c
+execute _ "cpc" (c:[]) = commutePermuteContract c
 execute _ "tree" (c:[]) = renderTreeRepl c
 execute _ "sort" (c:[]) = sortCalc c
 execute _ "sumsort" (c:[]) = sortSum c
@@ -59,50 +60,113 @@ flattenProduct (Prod s1 s2) = flattenProduct s1 ++ flattenProduct s2
 flattenProduct x = [x]
 
 canonTerms :: BookState -> Calc -> Calc
-canonTerms bs c = runReader (canonTerms' c) bs
+canonTerms bs c = runReader (canonTerms' c) $ emptyCanonEnv bs
 
 
-canonTerms' :: Calc -> Reader BookState Calc 
+emptyCanonEnv = C []
+
+-- type Dummy = (Int, Int)
+data CanonEnv = C
+  { relativeDummies :: [RelDummy]
+  , bookState :: BookState
+  }
+
+-- GS [1 0 2]+ [0 2 1]+
+-- C 0 1 [a b c] + C 1 2 [a b c]
+-- Choose a representation with [frees dummies]
+-- Insert P^-1 P for the permutation that moves the dummies to the end
+-- Canonicalise leaving the inverse on the outside
+-- 
+-- C 0 1 P [2 0 1] (P [1 2 0] [a b c]) + C 1 2 [a b c]
+
+-- GS [1 0 2]+ [0 2 1]+
+-- C 0 1 [c b a] + C 1 2 [a b c]
+-- C 0 1 P [2 1 0] [a b c] + C 1 2 [a b c]
+-- Choose a representation with [frees dummies]
+-- Insert P^-1 P for the permutation that moves the dummies to the end
+-- Canonicalise leaving the inverse on the outside
+-- 
+-- C 0 1 P [2 0 1] (P [1 2 0] P [2 1 0] [a b c]) + C 1 2 [a b c]
+
+-- Then need to derive generating set for dummies acting on the base indices to be
+-- used by Knuth.
+-- GSd P x = P GSd' x
+-- GSd' = P^-1 GSd P
+-- Need GS for dummies acting on base slots
+-- An element of GSd (acting on permuted indices) can be brought to act on the base indices
+
+-- collectDummies :: Calc -> ([Int], [Dummy])
+-- collectDummies c = case c of
+--   (Number _) -> ([], [])
+--   (Power _ _) -> ([], [])
+--   (Tensor _ []) -> ([], [])
+--   (Tensor _ idx) -> ([0..length idx - 1], [])
+--   (Prod f1 f2) -> (frees1 ++ offsetSequence n1 frees2, dummies1 ++ offsetTupleSequence n1 dummies2)
+--     where (frees1, dummies1) = collectDummies f1
+--           (frees2, dummies2) = collectDummies f2
+--           n1 = length frees1 + 2 * length dummies1
+--   (Contract i1 i2 c)
+--       | i1 < i2 -> (deleteAt i1 $ deleteAt i2 frees, (frees !! i1, frees !! i2) : dummies)
+--       | i1 > i2 -> (deleteAt i2 $ deleteAt i1 frees, (frees !! i1, frees !! i2) : dummies)
+--     where (frees, dummies) = collectDummies c
+--   _ -> undefined
+
+canonTerms' :: Calc -> Reader CanonEnv Calc 
 canonTerms' c = case c of
   Sum  s1 s2 -> Sum <$> (canonTerms' s1) <*> (canonTerms' s2)
+  Contract i1 i2 c' -> local (appendDummy (i1, i2)) (canonTerms' c')
   Permute p c' -> canonTerm p c'
+  c' -> canonTerm (identity $ length $ allIndices c') c'
   _ -> return c
+  where appendDummy d = (\e -> e { relativeDummies = d : relativeDummies e }) 
 
-canonTerm :: Permutation -> Calc -> Reader BookState Calc
+canonTerm :: Permutation -> Calc -> Reader CanonEnv Calc
 canonTerm p c = do
-  bs <- ask
-  let foo = allIndexSlots c
-      tensors = flattenProduct c
+  C rd bs <- ask
+  let tensors = flattenProduct c
       tt (Tensor name _) = fromJust $ lookupTensor name bs
       gs = termGeneratingSet $ map tt tensors
-      permWithSign = [1,2] ++ map (2 +) (fromPermutation p)
-      outPerm = canonicalizeFree permWithSign (map fromPermutation gs) 
-  return $ permToCalc c outPerm
+      gds = [] -- dummyGSWithSign rd p
+      sortDummyPerm = traceShowId $ sortDummyPermutation rd (permutationSize p)
+      addSign = concatPermutations (identity 2) -- [1,2] ++ map (2 +) (fromPermutation p)
+      totalGS = gs ++ gds
+      preCanonPerm = fromPermutation $ addSign $ p `multiply` sortDummyPerm
+      outPerm = toPermutation $ canonicalizeFree preCanonPerm (map fromPermutation totalGS) 
 
-canonPerm :: BookState -> Calc -> Calc
-canonPerm bs c@(Prod p1 p2) = Prod (canonPerm bs p1) (canonPerm bs p2)
-canonPerm bs c@(Contract _ _ _) = c
-canonPerm bs (Sum s1 s2) = Sum (canonPerm bs s1) (canonPerm bs s2)
-canonPerm bs c@(Number _) = c
-canonPerm bs c = permToCalc cfree outPerm
-  where (perm, cfree, gs) = permData bs c
-        permWithSign = [1,2] ++ map (2 +) perm
-        outPerm = canonicalizeFree permWithSign (map fromPermutation gs)
+      -- [(1,2), (3,4)] => [[2 1 3 4], [1 2 4 3], [3 4 1 2]]
+      -- dummies = absoluteDummies rd (permutationSize p)
+  return $ contractTerm rd $ permuteTerm c (outPerm `multiply` (addSign $ inverse sortDummyPerm))
 
---            InnerCalc Pi'    CanonCalc
-permToCalc :: Calc -> [Int] -> Calc
-permToCalc c perm = Prod sign (Permute (toPermutation lperm) c)
-  where lperm = map (flip (-) 2) $ drop 2 perm
-        [s1, s2] = take 2 perm
+contractTerm :: [RelDummy] -> Calc -> Calc
+contractTerm rds c = foldr addContract c (reverse rds)
+  where addContract (i1, i2) c = Contract i1 i2 c
+
+permuteTerm :: Calc -> Permutation -> Calc
+permuteTerm c perm = Prod sign (Permute (toPermutation idxperm) c)
+  where lPerm = fromPermutation perm
+        idxperm = map (flip (-) 2) $ drop 2 lPerm
+        [s1, s2] = take 2 lPerm
         sign = if s2 > s1 then Number 1 else Number (-1)
 
+-- canonPerm :: BookState -> Calc -> Calc
+-- canonPerm bs c@(Prod p1 p2) = Prod (canonPerm bs p1) (canonPerm bs p2)
+-- canonPerm bs c@(Contract _ _ _) = c
+-- canonPerm bs (Sum s1 s2) = Sum (canonPerm bs s1) (canonPerm bs s2)
+-- canonPerm bs c@(Number _) = c
+-- canonPerm bs c = permToCalc cfree outPerm
+--   where (perm, cfree, gs) = permData bs c
+--         permWithSign = [1,2] ++ map (2 +) perm
+--         outPerm = canonicalizeFree permWithSign (map fromPermutation gs)
+
+--            InnerCalc Pi'    CanonCalc
+
 --                                Pi     InnerCalc   GS
-permData :: BookState -> Calc -> ([Int], Calc, [Permutation])
-permData bs (Permute p c@(Tensor name _)) = (fromPermutation p, c, gs)
-  where gs = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
-permData bs c@(Tensor name _) = ([1..(nFreeIndices c)], c, gs)
-  where gs = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
-permData _ _ = undefined
+-- permData :: BookState -> Calc -> ([Int], Calc, [Permutation])
+-- permData bs (Permute p c@(Tensor name _)) = (fromPermutation p, c, gs)
+--   where gs = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
+-- permData bs c@(Tensor name _) = ([1..(nFreeIndices c)], c, gs)
+--   where gs = lookupGeneratingSet $ fromJust $ M.lookup name $ bookTensors bs
+-- permData _ _ = undefined
 
 -----------------------------------------------------------------------
 -- Basic algebraic convenience
@@ -331,6 +395,24 @@ commuteContractPermute' (Contract i1 i2 (Permute perm c)) = if permutationSize n
           i2' = fromJust $ elemIndex i2 (permuteList perm list)
           [i1'', i2''] = sort [i1', i2'] :: [Int]
 commuteContractPermute' x = x
+
+commutePermuteContract :: Calc -> Calc
+commutePermuteContract = transform commutePermuteContract'
+-- [2 1 3 4] [1 x 2 3 x 4]
+commutePermuteContract' :: Calc -> Calc
+commutePermuteContract' (Permute perm (Contract i1 i2 c)) = Contract i1 i2 (Permute (toPermutation (traceShowId fullPermuted)) c)
+--commutePermuteContract' perm (i1, i2) = fullPermuted
+  where full = [1..permutationSize perm + 2]
+        full' = if i1 < i2
+          then deleteAt i1 (deleteAt i2 full)
+          else deleteAt i2 (deleteAt i1 full)
+        permuted = permuteList perm full'
+        fullPermuted = if i1 > i2
+          then insertAt i1 (i1 + 1) (insertAt i2 (i2 + 1) permuted)
+          else insertAt i2 (i2 + 1) (insertAt i1 (i1 + 1) permuted)
+commutePermuteContract' x = x
+
+        
 -- Contract 5 <-> 6 Pos: []
 -- |
 -- `- toPermutation [3,4,5,6,7,1,2] Pos: [0]

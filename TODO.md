@@ -7,14 +7,15 @@
 * substitutions
 * manifolds
 * Canonicalise contractions
-* Canonicalise arbitrary monoterm T.a.b T.c.d R.e.f
 * Unicode Lexer / Parser support
+* Permute module utils
 
 ## BUGS
 * canon crashed when no symmetry defined
 * T * 0
 
 ## DONE
+* Canonicalise arbitrary monoterm T.a.b T.c.d R.e.f
 * libcanonicalize
     * free indices canonicalization
     * strong generating sets

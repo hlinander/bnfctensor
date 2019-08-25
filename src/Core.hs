@@ -126,7 +126,8 @@ amendGeneratingSet t (sg, ig) = (sg ++ sg',
                         --    sg', zipWith concatPermutations gs' (repeat $ identity n'))
 
 termGeneratingSet :: [TensorType] -> [Permutation]
-termGeneratingSet ts = (uncurry . zipWith) concatPermutations $ foldr amendGeneratingSet ([], []) ts
+termGeneratingSet ts = (uncurry . zipWith) concatPermutations
+    $ foldr amendGeneratingSet ([], []) (traceShowId ts)
 
 lookupMetric' :: e -> ReprType -> BookState -> Either e TensorType
 lookupMetric' e r = (maybeToEither e) . lookupMetric r
@@ -326,6 +327,11 @@ maybeToEither _ (Just x)  = Right x
 -- ([5,6,3,4,1,2], [1,2,3,4])
 --  [5,6,3,4,1,2], [7,8,9,10]
 
+-- C 0 1 P 2,0,1 T 0 1 2
+-- C 0 1 P' 0,2,1 T 0 1 2
+-- i1' = permute i1 (inverse inverse p * inverse p')
+-- 0 = permute (inverse (2,0,1)) N
+
 -- [5,6,3,4,1,2]
 
 
@@ -364,6 +370,10 @@ allIndices c = undefined
 offsetSequence :: Int -> [Int] -> [Int]
 offsetSequence n = map (n +)
 
+offsetTupleSequence :: Int -> [(Int, Int)] -> [(Int, Int)]
+offsetTupleSequence n vinst = zip (offsetSequence n l1) (offsetSequence n l2)
+    where (l1, l2) = unzip vinst
+
 -- (True, _) => dummy index
 -- (False, _) => free index
 type IndexTagType = (Bool, Int)
@@ -372,24 +382,133 @@ type IndexTagType = (Bool, Int)
 --     (>>=) a b = undefined
 --     return a = a
 
-allIndexTags :: Calc -> [IndexTagType]
-allIndexTags c = case c of
-  (Number _) -> []
-  (Power _ _) -> []
-  (Tensor _ []) -> []
-  (Tensor _ idx) -> map (True,) [0..length idx]
-  (Prod f1 f2) -> tags1 ++ map (\x -> (fst x, snd x + length tags1)) tags2
-    where tags1 = allIndexTags f1
-          tags2 = allIndexTags f2
-  (Permute p c) -> permuteList (inverse p) $ allIndexTags c
-  (Contract i1 i2 c) -> toDummy i1 $ toDummy i2 (allIndexTags c)
-    where toDummy i = transformAt i ((True,) . snd)
-  (Op n idx c) -> undefined
-  _ -> undefined
+-- type Dummy = (Int, Int)
 
-allIndexSlots :: Calc -> ([Int], [Int])
-allIndexSlots c = (map snd frees, map snd dummies)
-    where (dummies, frees) = partition fst $ allIndexTags c 
+
+-- C 0 1 $ C 0 1 $ P [0 1 2 3 4 5]
+-- C 0 1 $ ([2 3], [(0, 1)])
+-- ([4 5], [(0, 1), (2, 3)])
+
+-- Contract relative to current frees
+type RelDummy = (Int, Int)
+
+-- Contract relative to absolut mono-term indices
+type AbsDummy = (Int, Int)
+
+-- returns a list of frees and dummies
+absoluteDummies :: [RelDummy] -> Int -> [AbsDummy]
+absoluteDummies rds n = snd $ collectFreesAndDummies rds n
+
+collectFreesAndDummies :: [RelDummy] -> Int -> ([Int], [AbsDummy])
+collectFreesAndDummies rds n = foldr adjustDummy (inIndices, []) (traceShow ("rds", rds) (reverse rds))
+    where adjustDummy (i1, i2) (indices, absDummies)
+            | i1 < i2 = (deleteAt i1 $ deleteAt i2 indices, (indices !! i1, indices !! i2) : absDummies)
+            | i1 > i2 = (deleteAt i2 $ deleteAt i1 indices, (indices !! i1, indices !! i2) : absDummies)
+          inIndices = [0..n - 1]
+
+-- Given frees and dummies want to generate a sorting permutation for that
+-- gives the indices in the two groups as [frees dummies]
+-- Example:
+--  T.a^a.b.c.d^c
+--  Frees: [2 4]  Dummies: [(0,1), (3,5)]
+--  Put free indices and dummy pairs together as in
+--  L1 = 2 4 0 1 3 5
+-- then the sortinPermutationAsc gives P such that P L1 = [0..5] (http://hackage.haskell.org/package/combinat-0.2.9.0/docs/Math-Combinat-Permutations.html#g:8)
+-- which means that P' = P^-1 satisfies P' [0..5] = L1
+-- i.e. P' sorts the indices into [frees dummies]
+
+-- | Returns permutation that sorts dummies to the end
+--                                                           _   _
+--                                                          | | | |
+-- >>> permuteList (sortDummyPermutation [(0,1), (0,1)] 6) [1,2,3,4,5,6]
+-- [5,6,1,2,3,4]
+--       
+--                                                           _   ___
+--                                                          | | |   |
+-- >>> permuteList (sortDummyPermutation [(0,2), (0,1)] 6) [1,2,3,4,5,6]
+-- [4,6,1,2,3,5]
+sortDummyPermutation :: [RelDummy] -> Int -> Permutation
+sortDummyPermutation rds n = inverseSorting 
+    where (frees, dummyPairs) = collectFreesAndDummies rds n
+          tupleToList (i1, i2) = [i1, i2]
+          freesDummies = frees ++ concatMap tupleToList (reverse dummyPairs)
+          inverseSorting = sortingPermutationAsc freesDummies
+
+-- | Dummy generating set under permutation
+-- >>> let [dg] = dummyGS [(0,1),(0,1)] (identity 6)
+-- >>> fromPermutation dg
+-- [3,4,1,2,5,6]
+--
+-- (Remember permutation acts on the right so p * q acts as ([..] p) q)
+-- >>> let [dg] = dummyGS [(0,1),(0,1)] (cycleLeft 6)
+-- >>> let p1 = dg `multiply` cycleLeft 6
+-- >>> let p2 = cycleLeft 6 `multiply` (toPermutation [3,4,1,2,5,6])
+-- >>> p1 == p2
+-- True
+dummyGS :: [RelDummy] -> Permutation -> [Permutation]
+dummyGS [] _ = []
+dummyGS rds p = map (commute p) dummySwaps
+    where n = permutationSize p
+          (frees, dummies) = collectFreesAndDummies rds n
+          swapPerm (i1, i2) (j1, j2) = multiply t1 t2
+            where t1 = (transposition n (i1 + 1, j1 + 1))
+                  t2 = (transposition n (i2 + 1, j2 + 1))
+          dummySwaps = zipWith swapPerm (init dummies) (tail dummies)
+
+dummyGSWithSign :: [RelDummy] -> Permutation -> [Permutation]
+dummyGSWithSign rds p = map addSign dgs
+    where dgs = dummyGS rds p
+          addSign = concatPermutations (identity 2)
+
+-- | Commute permutation
+-- [..] x' P = [..] P x ==> x' = P * x * P^-1
+--
+-- (Remember permutation acts on the right so p * q acts as ([..] p) q)
+-- >>> let p = cycleLeft 5
+-- >>> let x = transposition 5 (1,2)
+-- >>> (commute p x) `multiply` p == p `multiply` x
+-- True
+commute :: Permutation -> Permutation -> Permutation
+commute p x =  p `multiply` x `multiply` (inverse p)
+
+-- -- returns a list of frees and dummies
+-- collectDummies :: [RelDummy] -> Calc -> ([Int], [AbsDummy])
+-- collectDummies c = case c of
+--   (Number _) -> ([], [])
+--   (Power _ _) -> ([], [])
+--   (Tensor _ []) -> ([], [])
+--   (Tensor _ idx) -> ([0..length idx - 1], [])
+--   (Prod f1 f2) -> (frees1 ++ offsetSequence n1 frees2, dummies1 ++ offsetTupleSequence n1 dummies2)
+--     where (frees1, dummies1) = collectDummies f1
+--           (frees2, dummies2) = collectDummies f2
+--           n1 = length frees1 + 2 * length dummies1
+--   (Contract i1 i2 c)
+--       | i1 < i2 -> (deleteAt i1 $ deleteAt i2 frees, (frees !! i1, frees !! i2) : dummies)
+--       | i1 > i2 -> (deleteAt i2 $ deleteAt i1 frees, (frees !! i1, frees !! i2) : dummies)
+--     where (frees, dummies) = collectDummies c
+--   _ -> undefined
+
+
+-- allIndexTags :: Calc -> [IndexTagType]
+-- allIndexTags c = case c of
+--   (Number _) -> []
+--   (Power _ _) -> []
+--   (Tensor _ []) -> []
+--   (Tensor _ idx) -> map (True,) [0..length idx]
+--   (Prod f1 f2) -> tags1 ++ map (\x -> (fst x, snd x + length tags1)) tags2
+--     where tags1 = allIndexTags f1
+--           tags2 = allIndexTags f2
+--   (Permute p c) -> permuteList (inverse p) $ allIndexTags c
+--   (Contract i1 i2 c) -> toDummy i1 $ toDummy i2 (allIndexTags c)
+--       | i1 < i2 -> deleteAt i1 $ deleteAt i2 (freeIndexFromCalc c)
+--       | i1 > i2 -> deleteAt i2 $ deleteAt i1 (freeIndexFromCalc c)
+--     where toDummy i = transformAt i ((True,) . snd)
+--   (Op n idx c) -> undefined
+--   _ -> undefined
+
+-- allIndexSlots :: Calc -> ([Int], [Int])
+-- allIndexSlots c = (map snd frees, map snd dummies)
+--     where (dummies, frees) = partition fst $ allIndexTags c 
 
 -- allIndexSlots :: Calc -> ([Int], [Int])
 -- allIndexSlots c = case c of
@@ -408,3 +527,4 @@ allIndexSlots c = (map snd frees, map snd dummies)
 --       | i1 < i2 -> deleteAt i1 $ deleteAt i2 (freeIndexFromCalc c)
 --       | i1 > i2 -> deleteAt i2 $ deleteAt i1 (freeIndexFromCalc c)
 --   (Op n idx c) -> idx ++ freeIndexFromCalc c
+

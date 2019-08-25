@@ -2,7 +2,7 @@
 
 LIBDIR = ../canonicalize
 LDOPTS = -lstdc++ -lcanonicalize -L$(LIBDIR)
-GHCOPTS = -static -hidir=build/ -odir=build/
+GHCOPTS = -static -hidir=build/ -odir=build/ -g
 # -no-keep-hi-files -no-keep-o-files -fhpc 
 
 UID = $(shell id -u)
@@ -38,6 +38,7 @@ tensor: Main.hs XPerm.hs $(HSMODULES) $(CANONICALIZE)
 
 test: Test.hs $(HSMODULES) $(CANONICALIZE)
 	LD_PRELOAD="$(LIBDIR)/libcanonicalize.so" runhaskell RunTest.hs
+	LD_PRELOAD="$(LIBDIR)/libcanonicalize.so" doctest $(HSMODULES)
 	
 docker: Main.hs $(HSMODULES)
 	docker run $(DOCKER) make tensor
@@ -49,7 +50,7 @@ docker-ghcid: $(CANONICALIZE)
 	docker run $(DOCKER) ghcid "--command=ghci -fobject-code $(GHCOPTS)" 
 
 docker-ghci: $(CANONICALIZE)
-	docker run -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history $(DOCKER) ghci -L../canonicalize/ -lcanonicalize -fobject-code
+	docker run -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history $(DOCKER) ghci -lstdc++ -L../canonicalize/ -lcanonicalize -fobject-code
 
 docker-ghci-debug:
 	docker run -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history $(DOCKER) ghci -fexternal-interpreter -prof

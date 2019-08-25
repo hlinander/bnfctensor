@@ -6,9 +6,9 @@ import Data.List
 import Debug.Trace
 
 
-deleteAt :: Int -> [a] -> [a]
+deleteAt :: Show a => Int -> [a] -> [a]
 deleteAt idx l = lh ++ rh
-    where (lh,_:rh) = splitAt idx l
+    where (lh,_:rh) = splitAt (traceShow (idx, l) idx) (l)
 
 popAt :: Int -> [a] -> ([a], a)
 popAt idx xs = (lh ++ rh, el)

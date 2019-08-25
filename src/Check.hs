@@ -238,20 +238,22 @@ symmetryAppend sym = do
         unpackLabels = map labelsFromList
         attachSymmetry st t = t { tensorSymmetries = st }
         makeAndInsertTypeOnTensor tensors l st = M.insert l (attachSymmetry st (tt l)) tensors
-        updateTensors tensors anti lls = foldr (\l tensors -> makeAndInsertTypeOnTensor tensors l (symmetrize anti $ nIndices l)) tensors lls
+        updateTensors tensors anti lls = 
+            foldr (\l tensors -> makeAndInsertTypeOnTensor tensors l 
+            (symmetrize anti $ nIndices l)) tensors lls
     case sym of -- [1 2 3 4] -> [[1, 2], [2, 3], [3, 4], [4, 1]]
         Symmetric lls -> modify (\bs -> bs { bookTensors = updateTensors (bookTensors bs) False (unpackLabels lls) })
         AntiSymmetric lls -> modify (\bs -> bs { bookTensors = updateTensors (bookTensors bs) True (unpackLabels lls) })
 
 -- bool True => antisymmetric False => symmetric
 symmetrize :: Bool -> Int -> [SymmetryType]
-symmetrize anti n = map (\idxSym -> SymmetryType {
-                indexSymmetry = idxSym, 
-                signSymmetry = toPermutation $ if anti then [2,1] else [1,2]
+symmetrize anti n = map (\idxSym -> SymmetryType 
+            { indexSymmetry = idxSym
+            ,   signSymmetry = toPermutation $ if anti then [2,1] else [1,2]
             }) idxPerms 
     where 
           swapPair = transposition n
-          pairs n = map (\i -> (i, (mod i n) + 1)) [1..n]
+          pairs n = map (\i -> (i, i + 1)) [1..(n-1)]
           idxPerms = map swapPair $ pairs n 
 
 
