@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Transform where
 
 import Test.QuickCheck
@@ -38,8 +39,9 @@ execute _ "collect" (c:[]) = fixPoint collectTerms c
 execute _ "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
-execute bs "canon" (c:[]) = canonTerms bs c
+execute bs "canon" (c:[]) = canonTerms bs $ commutePermuteContract c
 execute _ _ (c:rest) = c
+
 
 fixPoint :: (Calc -> Calc) -> Calc -> Calc
 fixPoint = fixPoint' 100
@@ -64,6 +66,7 @@ canonTerms bs c = runReader (canonTerms' c) $ emptyCanonEnv bs
 
 
 emptyCanonEnv = C []
+resetCanonDummies e = e { relativeDummies = [] } 
 
 -- type Dummy = (Int, Int)
 data CanonEnv = C
@@ -113,21 +116,25 @@ data CanonEnv = C
 
 canonTerms' :: Calc -> Reader CanonEnv Calc 
 canonTerms' c = case c of
-  Sum  s1 s2 -> Sum <$> (canonTerms' s1) <*> (canonTerms' s2)
-  Contract i1 i2 c' -> local (appendDummy (i1, i2)) (canonTerms' c')
+  Sum  s1 s2 -> Sum <$> (local resetCanonDummies (canonTerms' s1)) <*> (local resetCanonDummies $ canonTerms' s2)
+  -- Sum  s1 s2 -> Sum <$> canonTerms' s1 <*> canonTerms' s2
+  Contract i1 i2 c' -> Contract i1 i2 <$> local (appendDummy (i1, i2)) (canonTerms' c')
   Permute p c' -> canonTerm p c'
-  c' -> canonTerm (identity $ length $ allIndices c') c'
+  c' | isCanonicalizable c' -> canonTerm (identity $ length $ allIndices c') c'
+  Prod f1 f2 | not $ isMonoTerm c -> Prod 
+    <$> local resetCanonDummies (canonTerms' f1) 
+    <*> local resetCanonDummies (canonTerms' f2)
   _ -> return c
   where appendDummy d = (\e -> e { relativeDummies = d : relativeDummies e }) 
 
 canonTerm :: Permutation -> Calc -> Reader CanonEnv Calc
 canonTerm p c = do
   C rd bs <- ask
-  let tensors = flattenProduct c
+  let tensors = filter isTensor $ flattenProduct c
       tt (Tensor name _) = fromJust $ lookupTensor name bs
-      gs = termGeneratingSet $ map tt tensors
-      gds = [] -- dummyGSWithSign rd p
-      sortDummyPerm = traceShowId $ sortDummyPermutation rd (permutationSize p)
+      gs = termGeneratingSet $ map tt tensors 
+      gds = dummyGSWithSign rd p
+      sortDummyPerm = sortDummyPermutation rd (permutationSize p)
       addSign = concatPermutations (identity 2) -- [1,2] ++ map (2 +) (fromPermutation p)
       totalGS = gs ++ gds
       preCanonPerm = fromPermutation $ addSign $ p `multiply` sortDummyPerm
@@ -135,18 +142,14 @@ canonTerm p c = do
 
       -- [(1,2), (3,4)] => [[2 1 3 4], [1 2 4 3], [3 4 1 2]]
       -- dummies = absoluteDummies rd (permutationSize p)
-  return $ contractTerm rd $ permuteTerm c (outPerm `multiply` (addSign $ inverse sortDummyPerm))
-
-contractTerm :: [RelDummy] -> Calc -> Calc
-contractTerm rds c = foldr addContract c (reverse rds)
-  where addContract (i1, i2) c = Contract i1 i2 c
+  return $ permuteTerm c (outPerm `multiply` (addSign $ inverse sortDummyPerm))
 
 permuteTerm :: Calc -> Permutation -> Calc
-permuteTerm c perm = Prod sign (Permute (toPermutation idxperm) c)
+permuteTerm c perm = if s2 > s1 then term else Prod (Number (-1)) term
   where lPerm = fromPermutation perm
         idxperm = map (flip (-) 2) $ drop 2 lPerm
         [s1, s2] = take 2 lPerm
-        sign = if s2 > s1 then Number 1 else Number (-1)
+        term = (Permute (toPermutation idxperm) c)
 
 -- canonPerm :: BookState -> Calc -> Calc
 -- canonPerm bs c@(Prod p1 p2) = Prod (canonPerm bs p1) (canonPerm bs p2)
@@ -268,11 +271,9 @@ simplifyTerms = transform sT
   where sT (Sum (Number n) (Number m)) = Number (n+m)
         sT (Sum (Number m) (Sum (Number n) f)) = Sum (Number (n+m)) f
         sT (Sum (Sum (Number n) f1) f2) = Sum (Number n) (Sum f1 f2)
+        sT (Sum (Tensor "∅" _) t2) = t2
+        sT (Sum t1 (Tensor "∅" _) ) = t1
         sT x = x
-
-
-
-
 
 simplifyFactors' :: Calc -> Calc
 simplifyFactors' (Prod (Number n) (Number m)) = Number (n*m)
@@ -400,7 +401,7 @@ commutePermuteContract :: Calc -> Calc
 commutePermuteContract = transform commutePermuteContract'
 -- [2 1 3 4] [1 x 2 3 x 4]
 commutePermuteContract' :: Calc -> Calc
-commutePermuteContract' (Permute perm (Contract i1 i2 c)) = Contract i1 i2 (Permute (toPermutation (traceShowId fullPermuted)) c)
+commutePermuteContract' (Permute perm (Contract i1 i2 c)) = Contract i1 i2 (Permute (toPermutation (fullPermuted)) c)
 --commutePermuteContract' perm (i1, i2) = fullPermuted
   where full = [1..permutationSize perm + 2]
         full' = if i1 < i2

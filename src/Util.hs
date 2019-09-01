@@ -8,7 +8,7 @@ import Debug.Trace
 
 deleteAt :: Show a => Int -> [a] -> [a]
 deleteAt idx l = lh ++ rh
-    where (lh,_:rh) = splitAt (traceShow (idx, l) idx) (l)
+    where (lh,_:rh) = splitAt (idx) (l)
 
 popAt :: Int -> [a] -> ([a], a)
 popAt idx xs = (lh ++ rh, el)

@@ -101,6 +101,11 @@ loadBook f = readFile f >>= return . (\s -> L.map ((++";") . T.unpack) $ L.filte
           putSuccess s'
           return bs'
 
+dumpEverything :: BookState -> String -> IO ()
+dumpEverything bs name = do
+    putStr $ L.take 1 $ reverse $ show bs
+    writeFile (name ++ ".bs") (show bs)
+
 repl :: IO ()
 repl = replRL emptyBook
 
@@ -115,6 +120,7 @@ replRL bs = do
     Just line -> do
         addHistory line
         case line of
+          ":dump" -> dumpEverything bs "dumps/dump"
           ":show tensors" -> showTensors bs >> replRL bs
           ":show variables" -> undefined
           ":show functions" -> undefined

@@ -32,13 +32,13 @@ type IndexType = ReprType
 data GroupType = GroupType {
     groupName :: String,
     groupDims :: [Int]
-} deriving (Show, Eq, Ord)
+} deriving (Show, Read, Eq, Ord)
 
 data TensorType = TensorType {
     tensorName :: String,
     tensorIndices :: [IndexType],
     tensorSymmetries :: [SymmetryType]
-} deriving (Show, Eq, Ord)
+} deriving (Show, Read, Eq, Ord)
 
 
 -- make this data type an sum?
@@ -48,23 +48,23 @@ data SymmetryType = SymmetryType {
     -- invariant always length 2
     -- either [0,1] [1,0]
     signSymmetry :: Permutation
-} deriving (Show, Eq, Ord)
+} deriving (Show, Read, Eq, Ord)
 
 data OpType = OpType {
     opName :: String,
     opIndices :: [IndexType]
-} deriving Show
+} deriving (Show, Read)
 
 data ReprType = ReprType {
     reprDim :: Int,
     reprGroup :: GroupType
     --reprMetric :: Maybe TensorType
-} deriving (Show, Eq, Ord)
+} deriving (Show, Read, Eq, Ord)
 
 data FunctionType = FunctionType {
     funcName :: String,
     funcArity :: Int
-} deriving (Show, Eq)
+} deriving (Show, Read, Eq)
 
 data BookState = BookState {
     bookTensors :: M.Map TensorName TensorType,
@@ -72,7 +72,7 @@ data BookState = BookState {
     bookFuncs :: [FunctionType],
     bookCalcs :: M.Map String Calc,
     bookMetrics :: M.Map ReprType TensorType
-} deriving Show
+} deriving (Show, Read)
 
 nextAnonymousId :: BookState -> Int
 nextAnonymousId = length . filter (isPrefixOf "$") . M.keys . bookCalcs
@@ -127,7 +127,7 @@ amendGeneratingSet t (sg, ig) = (sg ++ sg',
 
 termGeneratingSet :: [TensorType] -> [Permutation]
 termGeneratingSet ts = (uncurry . zipWith) concatPermutations
-    $ foldr amendGeneratingSet ([], []) (traceShowId ts)
+    $ foldr amendGeneratingSet ([], []) (ts)
 
 lookupMetric' :: e -> ReprType -> BookState -> Either e TensorType
 lookupMetric' e r = (maybeToEither e) . lookupMetric r
@@ -187,7 +187,7 @@ data Calc
 --    | Lambda Calc
 --    | App Calc Calc
 --    | Var Int
-    deriving (Show, Eq, Ord)
+    deriving (Show, Read, Eq, Ord)
 
 instance Uniplate Calc where
     uniplate (Sum s1 s2) = plate Sum |* s1 |* s2
@@ -203,9 +203,9 @@ instance Uniplate Calc where
 data Index = Index {
     indexRepr :: IndexType,
     indexValence :: ValenceType
-} deriving (Show, Eq, Ord)
+} deriving (Show, Read, Eq, Ord)
 
-data ValenceType = Up | Down deriving (Show, Eq, Ord)
+data ValenceType = Up | Down deriving (Show, Read, Eq, Ord)
 
 infixl 5 |*|
 infixl 4 |+|
@@ -292,7 +292,7 @@ nFreeIndices :: Calc -> Int
 nFreeIndices = length . freeIndexFromCalc
 
 tensorTypeFromCalc :: String -> Calc -> TensorType
-tensorTypeFromCalc l c = TensorType l (map indexRepr $ freeIndexFromCalc c) undefined
+tensorTypeFromCalc l c = TensorType l (map indexRepr $ freeIndexFromCalc c) []
 
 -- indexTypeFromCalc :: Calc -> [IndexType]
 -- indexTypeFromCalc (Number _) = []
@@ -315,6 +315,10 @@ type Error = Except String
 maybeToEither :: e -> Maybe a -> Either e a
 maybeToEither e (Nothing) = Left e
 maybeToEither _ (Just x)  = Right x
+
+isTensor (Tensor _ _) = True
+isTensor _ = False
+
 
 -- T.a.b^b * T.c.d.e = C 1 2 (T.a.x.y T.c.d.e)
 -- [1,2] dummies
@@ -345,6 +349,21 @@ isMonoTerm c = case c of
   (Permute p c) -> isMonoTerm c
   (Contract i1 i2 c) -> isMonoTerm c
   (Op n idx c) -> isMonoTerm c
+
+containsNullTensor :: Calc -> Bool
+containsNullTensor c = case c of
+  (Number _) -> False
+  (Power _ _) -> False
+  (Tensor "∅" _) -> True
+  (Tensor _ _) -> False
+  (Sum t1 t2) -> containsNullTensor t1 || containsNullTensor t2
+  (Prod f1 f2) -> containsNullTensor f1 || containsNullTensor f2
+  (Permute p c) -> containsNullTensor c
+  (Contract i1 i2 c) -> containsNullTensor c
+  (Op n idx c) -> containsNullTensor c
+
+isCanonicalizable :: Calc -> Bool
+isCanonicalizable c = and $ map (\f -> f c) [isMonoTerm, not . containsNullTensor]
 
 -- prop_allIndexSlotsPreservesLength :: Calc -> Property
 -- prop_allIndexSlotsPreservesLength c =
@@ -400,7 +419,7 @@ absoluteDummies :: [RelDummy] -> Int -> [AbsDummy]
 absoluteDummies rds n = snd $ collectFreesAndDummies rds n
 
 collectFreesAndDummies :: [RelDummy] -> Int -> ([Int], [AbsDummy])
-collectFreesAndDummies rds n = foldr adjustDummy (inIndices, []) (traceShow ("rds", rds) (reverse rds))
+collectFreesAndDummies rds n = foldr adjustDummy (inIndices, []) ((reverse rds))
     where adjustDummy (i1, i2) (indices, absDummies)
             | i1 < i2 = (deleteAt i1 $ deleteAt i2 indices, (indices !! i1, indices !! i2) : absDummies)
             | i1 > i2 = (deleteAt i2 $ deleteAt i1 indices, (indices !! i1, indices !! i2) : absDummies)

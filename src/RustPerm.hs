@@ -13,6 +13,8 @@ import Foreign.Marshal
 import Data.Int
 import System.IO.Unsafe
 
+import Debug.Trace
+
 -- foreign import ccall "canonicalize" winPerm :: Ptr PermT -> Ptr Int64 -> IO ()
 foreign import ccall "canonicalize_free" callCFRust :: CLong -> Ptr CLong -> CLong -> Ptr CLong -> Ptr CLong -> IO ()
 
@@ -29,6 +31,7 @@ data PermT = PermT {
 toCLong = map fromIntegral
 
 canonicalizeFree :: [Int] -> [[Int]] -> [Int]
+canonicalizeFree p [] = trace ("WARNING: GeneratingSet empty when running canonicalize") p
 canonicalizeFree p gs = map ((+) 1) $ map fromIntegral $ unsafePerformIO $ canonicalizeFreeRust (toCLong p) (map toCLong gs)
     
 canonicalizeFreeRust :: [CLong] -> [[CLong]] -> IO [CLong]

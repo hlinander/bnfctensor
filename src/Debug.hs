@@ -30,6 +30,11 @@ debugCalcBS string bs = case calcFromExpr (debugParse string) bs of
 debugBSAndCalc :: String -> String -> (BookState, Calc)
 debugBSAndCalc sbs sc = unsafePerformIO (repl' emptyBook sbs >>= \(bs, _) -> return $ (bs, debugCalcBS sc bs))
 
+loadBSFromFile :: FilePath -> IO BookState
+loadBSFromFile name = do
+    content <- readFile name
+    return $ read content
+
 -- debug calc = unsafePerformIO $ putStrLn (renderConsole calc) >> return calc
 
 -- debugCalcReal :: Calc -> String
