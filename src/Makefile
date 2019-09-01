@@ -20,15 +20,17 @@ xperm: external/xperm_new.cc external/xperm_new.h
 
 CANONICALIZE = libcanonicalize.so
 
-HSMODULES = Eval.hs \
-	    Core.hs \
-	    Tensor.hs \
+HSMODULES = CalcFromExpr.hs \
 	    Check.hs \
+	    Core.hs \
+	    Eval.hs \
 	    Frontend/LexTensor.hs \
 	    Frontend/ParTensor.hs \
 	    RenderCalc.hs \
+	    RustPerm.hs \
+	    Tensor.hs \
 	    Transform.hs \
-	    CalcFromExpr.hs
+	    Util.hs
 
 tensorkernel: Kernel.hs $(HSMODULES) $(CANONICALIZE)
 	ghc --make $< $(LDOPTS) -o tensorkernel $(GHCOPTS)
