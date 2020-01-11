@@ -28,18 +28,22 @@ execute :: BookState -> String -> [Calc] -> Calc
 execute _ "distribute" (c:[]) = distribute c
 execute _ "leibnitz" (c:[]) = leibnitz c
 execute _ "simp" (c:[]) = simplify c
+execute _ "simpperm" (c:[]) = simplifyPermutations c
 execute _ "show" (c:[]) = showCalc c
 execute _ "ccp" (c:[]) = commuteContractPermute c
 execute _ "cpc" (c:[]) = commutePermuteContract c
 execute _ "tree" (c:[]) = renderTreeRepl c
 execute _ "sort" (c:[]) = sortCalc c
+execute _ "cc" (c:[]) = canonContractValence c
 execute _ "sumsort" (c:[]) = sortSum c
 execute _ "elm" (c:[]) = eliminateMetrics c
 execute _ "collect" (c:[]) = fixPoint collectTerms c
 execute _ "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
-execute bs "canon" (c:[]) = canonTerms bs $ commutePermuteContract c
+execute bs "canon" (c:[]) = canonTerms bs c
+-- $ commutePermuteContract 
+-- $ simplifyPermutations c
 execute _ _ (c:rest) = c
 
 
@@ -121,28 +125,54 @@ canonTerms' c = case c of
   Contract i1 i2 c' -> Contract i1 i2 <$> local (appendDummy (i1, i2)) (canonTerms' c')
   Permute p c' -> canonTerm p c'
   c' | isCanonicalizable c' -> canonTerm (identity $ length $ allIndices c') c'
-  Prod f1 f2 | not $ isMonoTerm c -> Prod 
-    <$> local resetCanonDummies (canonTerms' f1) 
-    <*> local resetCanonDummies (canonTerms' f2)
+  -- Prod f1 f2 | not $ isMonoTerm c -> Prod 
+  --   <$> local resetCanonDummies (canonTerms' f1) 
+  --   <*> local resetCanonDummies (canonTerms' f2)
   _ -> return c
   where appendDummy d = (\e -> e { relativeDummies = d : relativeDummies e }) 
 
 canonTerm :: Permutation -> Calc -> Reader CanonEnv Calc
 canonTerm p c = do
   C rd bs <- ask
-  let tensors = filter isTensor $ flattenProduct c
+  let tensors = trace (show $ length $ flattenProduct c) filter isTensor $ flattenProduct c
       tt (Tensor name _) = fromJust $ lookupTensor name bs
-      gs = termGeneratingSet $ map tt tensors 
-      gds = dummyGSWithSign rd p
+      gs = termGeneratingSet $ traceShowId (map tt tensors)
+      gds = [] -- dummyGSWithSign rd p
       sortDummyPerm = sortDummyPermutation rd (permutationSize p)
       addSign = concatPermutations (identity 2) -- [1,2] ++ map (2 +) (fromPermutation p)
-      totalGS = gs ++ gds
-      preCanonPerm = fromPermutation $ addSign $ p `multiply` sortDummyPerm
+      totalGS = map (commute $ addSign sortDummyPerm) $ gs ++ gds
+      preCanonPerm = fromPermutation $ addSign $ p `multiply` (sortDummyPerm)
       outPerm = toPermutation $ canonicalizeFree preCanonPerm (map fromPermutation totalGS) 
 
       -- [(1,2), (3,4)] => [[2 1 3 4], [1 2 4 3], [3 4 1 2]]
       -- dummies = absoluteDummies rd (permutationSize p)
   return $ permuteTerm c (outPerm `multiply` (addSign $ inverse sortDummyPerm))
+
+canonContractValence :: Calc -> Calc
+canonContractValence = transform canonContractValence'
+
+canonContractValence' (Contract i1 i2 c') = Contract i1 i2 
+    $ megasetValence i2 Up 
+    $ megasetValence i1 Down c'
+canonContractValence' c = c
+
+ 
+-- int is free position
+megasetValence :: Int -> ValenceType -> Calc -> Calc
+megasetValence i v c = case c of
+  Tensor n idxs -> Tensor n $ transformAt i (replaceValence v) idxs
+  Sum t1 t2 -> Sum (megasetValence i v t1) (megasetValence i v t2)
+  Prod f1 f2
+    | i < n1 -> Prod (megasetValence i v f1) f2
+    | otherwise -> Prod f1 (megasetValence (i - n1) v f2)
+    where n1 = nFreeIndices f1
+  Contract i1 i2 c' -> Contract i1 i2 (megasetValence i' v c')
+    where i' = indexUnderContract i1 i2 i
+  Permute perm c' -> Permute perm (megasetValence (image perm i) v c')
+  Op n idxs c'
+      | i < length idxs -> Op n (transformAt i (replaceValence v) idxs) c'
+      | i >= length idxs -> Op n idxs $ megasetValence (i - length idxs) v c'
+  where replaceValence v idx = idx { indexValence = v }
 
 permuteTerm :: Calc -> Permutation -> Calc
 permuteTerm c perm = if s2 > s1 then term else Prod (Number (-1)) term
@@ -191,15 +221,15 @@ distribute' c = case c of
     _ -> c
 
 simplify = fixPoint
-      (
-      commuteContractPermute
+    ( commuteContractPermute
     . (fixPoint collectTerms)
     . simplifyContract
     . eliminateMetrics
     . simplifyPermutations
     . simplifyTerms
     . simplifyFactors
-    . sortCalc)
+    . sortCalc
+    )
 
 sortCalc :: Calc -> Calc
 sortCalc = transform f
@@ -338,6 +368,7 @@ eliminateOneMetric c im oim it index = Permute perm $ removeMetric (replaceIndex
         [r1, r2] = sort [im, oim]
         posList = deleteAt r1 $ deleteAt r2 $ replaceAt it (oim) [0..(nFreeIndices c - 1)]
 
+-- totally unsafe, please use caution when calling
 removeMetric :: Calc -> Int -> Calc
 removeMetric c i = case c of
   Tensor "g" idx -> Number 1

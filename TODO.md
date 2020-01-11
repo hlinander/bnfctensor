@@ -9,6 +9,7 @@
 * Canonicalise contractions
 * Unicode Lexer / Parser support
 * Permute module utils
+* Encapsulate index from 0/1 technicalities
 
 ## BUGS
 * canon crashed when no symmetry defined

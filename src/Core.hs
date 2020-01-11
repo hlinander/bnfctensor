@@ -236,33 +236,34 @@ changeValence :: BookState -> Calc -> Int -> Either String Calc
 changeValence bs c i = do
     --let indices = traceShow ((show i) ++ ":") $ traceShowId $ freeIndexFromCalc c
     let indices = freeIndexFromCalc c
-    let index = indices!!i
-    let r = indexRepr index
-    let valence = indexValence index
-    let targetValence = otherValence valence
+        index = indices!!i
+        r = indexRepr index
+        valence = indexValence index
+        targetValence = otherValence valence
     metric <- lookupMetric' ("No metric for representation " ++ (show r)) r bs
     let newIndex = Index r targetValence
-    let newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| c
-    let contracted = Contract 1 (i+2) newCalc
-    let cycle = cycleLeft (i + 1)
-    let rest = identity $ (length indices) - (i + 1)
-    let perm = concatPermutations cycle rest
+        newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| c
+        contracted = Contract 1 (i+2) newCalc
+        cycle = cycleLeft (i + 1)
+        rest = identity $ (length indices) - (i + 1)
+        perm = concatPermutations cycle rest
     return $ Permute perm contracted
 
+-- unsafe
 switchValence :: BookState -> Calc -> Int -> Either String Calc
 switchValence bs c i = do
     let indices = freeIndexFromCalc c
-    let index = indices!!i
-    let r = indexRepr index
-    let valence = indexValence index
-    let targetValence = otherValence valence
+        index = indices!!i
+        r = indexRepr index
+        valence = indexValence index
+        targetValence = otherValence valence
     metric <- lookupMetric' ("No metric for representation " ++ (show r)) r bs
     let newIndex = Index r valence
-    let newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| (setValence c i targetValence)
-    let contracted = Contract 1 (i+2) newCalc
-    let cycle = cycleLeft (i + 1)
-    let rest = identity $ (length indices) - (i + 1)
-    let perm = concatPermutations cycle rest
+        newCalc = (Tensor (tensorName metric) [newIndex, newIndex]) |*| (setValence c i targetValence)
+        contracted = Contract 1 (i+2) newCalc
+        cycle = cycleLeft (i + 1)
+        rest = identity $ (length indices) - (i + 1)
+        perm = concatPermutations cycle rest
     return $ Permute perm contracted
 
 otherValence :: ValenceType -> ValenceType
@@ -418,6 +419,10 @@ type AbsDummy = (Int, Int)
 absoluteDummies :: [RelDummy] -> Int -> [AbsDummy]
 absoluteDummies rds n = snd $ collectFreesAndDummies rds n
 
+-- | Returns positions of frees and dummy pairs in absolut indexing
+--
+-- >>> collectFreesAndDummies [(0,1), (0,1)] 5
+-- ([4], [(0, 1), (2, 3)])
 collectFreesAndDummies :: [RelDummy] -> Int -> ([Int], [AbsDummy])
 collectFreesAndDummies rds n = foldr adjustDummy (inIndices, []) ((reverse rds))
     where adjustDummy (i1, i2) (indices, absDummies)
@@ -440,12 +445,16 @@ collectFreesAndDummies rds n = foldr adjustDummy (inIndices, []) ((reverse rds))
 --                                                           _   _
 --                                                          | | | |
 -- >>> permuteList (sortDummyPermutation [(0,1), (0,1)] 6) [1,2,3,4,5,6]
--- [5,6,1,2,3,4]
+-- [3,4,5,6,1,2]
 --       
+-- I.e the permutation that takes 
+--  the first two slots to position 3,4
+--  the second & third to position 5,6
+--  last two slots to the front (i.e. the free indices)                                                         _   ___
 --                                                           _   ___
 --                                                          | | |   |
 -- >>> permuteList (sortDummyPermutation [(0,2), (0,1)] 6) [1,2,3,4,5,6]
--- [4,6,1,2,3,5]
+-- [3,5,4,6,1,2]
 sortDummyPermutation :: [RelDummy] -> Int -> Permutation
 sortDummyPermutation rds n = inverseSorting 
     where (frees, dummyPairs) = collectFreesAndDummies rds n
@@ -466,13 +475,15 @@ sortDummyPermutation rds n = inverseSorting
 -- True
 dummyGS :: [RelDummy] -> Permutation -> [Permutation]
 dummyGS [] _ = []
-dummyGS rds p = map (commute p) dummySwaps
+dummyGS rds p = map (commute p) (dummyPairSwaps)
     where n = permutationSize p
           (frees, dummies) = collectFreesAndDummies rds n
           swapPerm (i1, i2) (j1, j2) = multiply t1 t2
             where t1 = (transposition n (i1 + 1, j1 + 1))
                   t2 = (transposition n (i2 + 1, j2 + 1))
-          dummySwaps = zipWith swapPerm (init dummies) (tail dummies)
+          dummyPairSwaps = zipWith swapPerm (init dummies) (tail dummies)
+          dummyValenceSwaps = map t dummies
+            where t (i1, i2) = transposition n (i1 + 1, i2 + 1)
 
 dummyGSWithSign :: [RelDummy] -> Permutation -> [Permutation]
 dummyGSWithSign rds p = map addSign dgs
