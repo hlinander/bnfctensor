@@ -30,7 +30,8 @@ HSMODULES = CalcFromExpr.hs \
 	    RustPerm.hs \
 	    Tensor.hs \
 	    Transform.hs \
-	    Util.hs
+	    Util.hs \
+        Debug.hs
 
 tensorkernel: Kernel.hs $(HSMODULES) $(CANONICALIZE)
 	ghc --make $< $(LDOPTS) -o tensorkernel $(GHCOPTS)
@@ -52,7 +53,8 @@ docker-ghcid: $(CANONICALIZE)
 	docker run $(DOCKER) ghcid "--command=ghci -fobject-code $(GHCOPTS)" 
 
 docker-ghci: $(CANONICALIZE)
-	docker run -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history $(DOCKER) ghci -lstdc++ -L../canonicalize/ -lcanonicalize -fobject-code
+	docker run -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history $(DOCKER) ghci -lstdc++ -L../canonicalize/\
+    -lcanonicalize -fobject-code $(HSMODULES)
 
 docker-ghci-debug:
 	docker run -v $(HOME)/.ghc/ghci_history:/root/.ghc/ghci_history $(DOCKER) ghci -fexternal-interpreter -prof

@@ -6,20 +6,21 @@ import Main
 import Core
 import Control.Monad.Reader
 import CalcFromExpr
+import RenderCalc
 import System.IO.Unsafe
 -- import GHC.Real (:%)
 
 
 getExpr :: Err Book -> Expr
 getExpr (Ok (Derivation [StmtVoid expr])) = expr
-getExpr _ = undefined
+getExpr b = error $ show b
 
 debugParse :: String -> Expr
 debugParse = getExpr . parse
 
 debugCalc :: String -> Calc
 debugCalc string = case calcFromExpr (debugParse string) emptyBook of
-    Left foo -> undefined
+    Left foo -> error "test"
     Right bar -> bar
 
 debugCalcBS :: String -> BookState -> Calc
@@ -29,6 +30,14 @@ debugCalcBS string bs = case calcFromExpr (debugParse string) bs of
 
 debugBSAndCalc :: String -> String -> (BookState, Calc)
 debugBSAndCalc sbs sc = unsafePerformIO (repl' emptyBook sbs >>= \(bs, _) -> return $ (bs, debugCalcBS sc bs))
+
+d bs s = c
+    where (_, c) = debugBSAndCalc bs s
+
+db bs s = debugBSAndCalc bs s
+
+p :: Printable prt => prt -> IO ()
+p = putStrLn . printConsole
 
 loadBSFromFile :: FilePath -> IO BookState
 loadBSFromFile name = do

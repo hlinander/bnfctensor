@@ -41,7 +41,7 @@ execute _ "collect" (c:[]) = fixPoint collectTerms c
 execute _ "sub" (c:pos) = case subCalc c pos of
                           Just calc -> calc
                           Nothing -> c
-execute bs "canon" (c:[]) = canonTerms bs c
+execute bs "canon" (c:[]) = canonicalize bs c
 -- $ commutePermuteContract 
 -- $ simplifyPermutations c
 execute _ _ (c:rest) = c
@@ -120,33 +120,29 @@ data CanonEnv = C
 
 canonTerms' :: Calc -> Reader CanonEnv Calc 
 canonTerms' c = case c of
-  Sum  s1 s2 -> Sum <$> (local resetCanonDummies (canonTerms' s1)) <*> (local resetCanonDummies $ canonTerms' s2)
+  Sum  s1 s2 -> Sum <$> (canonTerms' s1) <*> (canonTerms' s2)
   -- Sum  s1 s2 -> Sum <$> canonTerms' s1 <*> canonTerms' s2
-  Contract i1 i2 c' -> Contract i1 i2 <$> local (appendDummy (i1, i2)) (canonTerms' c')
+  -- Contract i1 i2 c' -> Contract i1 i2 <$> local (appendDummy (i1, i2)) (canonTerms' c')
+  Contract i1 i2 c' -> Contract i1 i2 <$> canonTerms' c'
   Permute p c' -> canonTerm p c'
   c' | isCanonicalizable c' -> canonTerm (identity $ length $ allIndices c') c'
   -- Prod f1 f2 | not $ isMonoTerm c -> Prod 
   --   <$> local resetCanonDummies (canonTerms' f1) 
   --   <*> local resetCanonDummies (canonTerms' f2)
   _ -> return c
-  where appendDummy d = (\e -> e { relativeDummies = d : relativeDummies e }) 
 
 canonTerm :: Permutation -> Calc -> Reader CanonEnv Calc
 canonTerm p c = do
   C rd bs <- ask
-  let tensors = trace (show $ length $ flattenProduct c) filter isTensor $ flattenProduct c
+  let tensors = filter isTensor $ flattenProduct c
       tt (Tensor name _) = fromJust $ lookupTensor name bs
-      gs = termGeneratingSet $ traceShowId (map tt tensors)
-      gds = [] -- dummyGSWithSign rd p
-      sortDummyPerm = sortDummyPermutation rd (permutationSize p)
+      gs = termGeneratingSet $ (map tt tensors)
+      -- sortDummyPerm = sortDummyPermutation rd (permutationSize p)
       addSign = concatPermutations (identity 2) -- [1,2] ++ map (2 +) (fromPermutation p)
-      totalGS = map (commute $ addSign sortDummyPerm) $ gs ++ gds
-      preCanonPerm = fromPermutation $ addSign $ p `multiply` (sortDummyPerm)
+      totalGS = gs
+      preCanonPerm = fromPermutation $ addSign $ p
       outPerm = toPermutation $ canonicalizeFree preCanonPerm (map fromPermutation totalGS) 
-
-      -- [(1,2), (3,4)] => [[2 1 3 4], [1 2 4 3], [3 4 1 2]]
-      -- dummies = absoluteDummies rd (permutationSize p)
-  return $ permuteTerm c (outPerm `multiply` (addSign $ inverse sortDummyPerm))
+  return $ permuteTerm c (outPerm)
 
 canonContractValence :: Calc -> Calc
 canonContractValence = transform canonContractValence'
@@ -340,6 +336,26 @@ simplifyContract' (Prod f1 (Contract i1 i2 c)) = Contract (i1 + n) (i2 + n) (Pro
   where n = nFreeIndices f1
 --simplifyContract' (Contract _ _ (Number 0)) = Number 0
 simplifyContract' x = x
+
+
+canonicalize :: BookState -> Calc -> Calc
+canonicalize bs c = canonTerms bs $ fixPoint (commutePermuteContract . canonContract . simplifyPermutations) c
+
+canonContract :: Calc -> Calc
+canonContract = transform canonContract'
+
+canonContract' :: Calc -> Calc
+canonContract' e@(Contract 0 1 x) = e
+canonContract' (Contract i1 i2 x) = Contract 0 1 $ Permute p x
+  where 
+    n = nFreeIndices x
+    l = [3..]
+    ip = take n $ insertAt i2 2 $ insertAt i1 1 l
+    p = toPermutation ip
+    -- p1 = transposition n (1, i1 + 1)
+    -- p2 = transposition n (2, i2 + 1)
+    -- p = inverse $ p1 `multiply` p2
+canonContract' x = x
 
 -- g.[a d]T^[a b c] = T.d^[b c]
 --    ^      ^
